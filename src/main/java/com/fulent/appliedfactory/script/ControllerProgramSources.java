@@ -4,8 +4,8 @@ package com.fulent.appliedfactory.script;
 public record ControllerProgramSources(
         String source, String compiledSource, String workspacePath, long updatedAt) {
     public ControllerProgramSources {
-        source = source == null ? "" : source;
-        compiledSource = compiledSource == null ? "" : compiledSource;
+        source = ControllerProgram.normalizeLineEndings(source);
+        compiledSource = ControllerProgram.normalizeLineEndings(compiledSource);
         workspacePath = workspacePath == null ? "" : workspacePath;
         updatedAt = Math.max(0L, updatedAt);
     }

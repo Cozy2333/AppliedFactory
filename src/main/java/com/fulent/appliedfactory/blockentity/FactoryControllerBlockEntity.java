@@ -298,6 +298,8 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     public ProgramLoadResult<FactoryProgram> updateControllerProgram(
             String source, String compiledSource, String workspacePath) {
         reloadControllerProgramFromStore();
+        source = ControllerProgram.normalizeLineEndings(source);
+        compiledSource = ControllerProgram.normalizeLineEndings(compiledSource);
         if (!ControllerProgram.isWithinLimit(source)
                 || !ControllerProgram.isWithinLimit(compiledSource)) {
             return ProgramLoadResult.failure(

@@ -28,6 +28,14 @@ public final class ControllerProgram {
     private ControllerProgram() {
     }
 
+    /** Canonical script representation used for local comparison, transport and persistence. */
+    public static String normalizeLineEndings(String source) {
+        if (source == null || source.indexOf('\r') < 0) {
+            return source == null ? "" : source;
+        }
+        return source.replace("\r\n", "\n").replace('\r', '\n');
+    }
+
     public static boolean isWithinLimit(String source) {
         return source.length() <= MAX_SOURCE_LENGTH
                 && source.getBytes(StandardCharsets.UTF_8).length <= MAX_SOURCE_BYTES;

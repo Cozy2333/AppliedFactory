@@ -20,6 +20,7 @@ import org.jetbrains.annotations.Nullable;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.fulent.appliedfactory.AppliedFactory;
+import com.fulent.appliedfactory.script.ControllerProgram;
 
 import net.minecraft.client.Minecraft;
 
@@ -153,6 +154,7 @@ public final class ScriptBundler {
     }
 
     public static String bundle(String source, @Nullable Path baseDir) throws McpToolException {
+        source = ControllerProgram.normalizeLineEndings(source);
         synchronized (COMPILER_LOCK) {
             var scan = invoke("__afScan", source);
             var edits = parseEdits(scan, baseDir);

@@ -226,6 +226,8 @@ public final class FactoryControllerProgramScreen
         if (uploadPending) {
             return;
         }
+        source = ControllerProgram.normalizeLineEndings(source);
+        scriptBox.setValue(source);
         final String compiled;
         try {
             ScriptBundler.requireTypeScriptEntry(path);

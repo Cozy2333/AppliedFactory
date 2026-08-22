@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import com.fulent.appliedfactory.mcp.ScriptBundler;
+import com.fulent.appliedfactory.script.ControllerProgram;
 
 /** Safe client-side access to files below {@code appliedscripts/}. */
 final class ScriptWorkspaceFiles {
@@ -27,13 +28,15 @@ final class ScriptWorkspaceFiles {
     }
 
     static String read(String relativePath) throws IOException {
-        return Files.readString(resolve(relativePath), StandardCharsets.UTF_8);
+        return ControllerProgram.normalizeLineEndings(
+                Files.readString(resolve(relativePath), StandardCharsets.UTF_8));
     }
 
     static void write(String relativePath, String source) throws IOException {
         var file = resolve(relativePath);
         Files.createDirectories(file.getParent());
-        Files.writeString(file, source, StandardCharsets.UTF_8);
+        Files.writeString(file, ControllerProgram.normalizeLineEndings(source),
+                StandardCharsets.UTF_8);
     }
 
     static boolean exists(String relativePath) {

@@ -283,7 +283,8 @@ public final class McpTools {
 
     private static String readFile(Path path, String name) throws McpToolException {
         try {
-            var source = Files.readString(path, StandardCharsets.UTF_8);
+            var source = ControllerProgram.normalizeLineEndings(
+                    Files.readString(path, StandardCharsets.UTF_8));
             if (!ControllerProgram.isWithinLimit(source)) {
                 throw new McpToolException(-32602, "script file too long (max "
                         + ControllerProgram.MAX_SOURCE_LENGTH + " chars): " + name);
