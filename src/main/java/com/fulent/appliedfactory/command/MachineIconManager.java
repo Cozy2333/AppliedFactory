@@ -1,8 +1,6 @@
 package com.fulent.appliedfactory.command;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,7 +13,6 @@ import com.fulent.appliedfactory.network.RequestMachineIconsPayload;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
 import com.google.gson.JsonSyntaxException;
 
 import net.minecraft.network.chat.Component;
@@ -26,10 +23,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
 /**
  * Server-side half of the JEI machine-icon lookup: tracks in-flight requests
  * started by the export commands and, when the client answers with the
- * category catalysts it resolved through JEI, merges them over the server-side
- * {@code recipe_types.json} — the client's JEI machines are the authoritative
- * "representative machine" for recipe types that do not declare a toast symbol
- * themselves.
+ * category catalysts it resolved through JEI, replaces {@code recipe_types.json}
+ * with that snapshot. JEI is the sole authority for representative machines;
+ * recipe toast symbols are deliberately not queried.
  */
 public final class MachineIconManager {
     private static final long TIMEOUT_MS = 5 * 60_000L;
@@ -59,8 +55,8 @@ public final class MachineIconManager {
         }
         var server = pending.server();
         if (!payload.available()) {
-            broadcast(server, "appliedfactory: client JEI unavailable; recipe_types.json keeps "
-                    + "server-side machine data");
+            broadcast(server, "appliedfactory: client JEI unavailable; "
+                    + "recipe_types.json remains empty");
             return;
         }
         JsonObject icons;
@@ -70,7 +66,7 @@ public final class MachineIconManager {
             AppliedFactory.LOGGER.warn("appliedfactory: malformed machine-icon response, ignoring");
             return;
         }
-        var merged = readRecipeTypes(pending.root());
+        var result = new JsonObject();
         var updated = 0;
         for (var entry : icons.entrySet()) {
             var typeId = entry.getKey();
@@ -80,35 +76,18 @@ public final class MachineIconManager {
             if (!(entry.getValue() instanceof JsonArray machines) || machines.isEmpty()) {
                 continue;
             }
-            merged.add(typeId, machines);
+            result.add(typeId, machines);
             updated++;
         }
         try {
-            ExportCommand.writeRecipeTypesFile(pending.root(), merged);
+            ExportCommand.writeRecipeTypesFile(pending.root(), result);
             broadcast(server, "appliedfactory: recipe_types.json refreshed with client JEI "
                     + "machine icons (" + updated + " recipe types)");
         } catch (IOException exception) {
             AppliedFactory.LOGGER.error(
-                    "appliedfactory: failed to write merged recipe types to {}",
+                    "appliedfactory: failed to write JEI recipe types to {}",
                     pending.root().resolve("recipe_types.json"), exception);
         }
-    }
-
-    private static JsonObject readRecipeTypes(Path root) {
-        var path = root.resolve("recipe_types.json");
-        try {
-            if (Files.isRegularFile(path)) {
-                var parsed = GSON.fromJson(
-                        Files.readString(path, StandardCharsets.UTF_8), JsonObject.class);
-                if (parsed != null) {
-                    return parsed;
-                }
-            }
-        } catch (IOException | JsonParseException exception) {
-            AppliedFactory.LOGGER.warn("appliedfactory: failed to read {} for merging",
-                    path, exception);
-        }
-        return new JsonObject();
     }
 
     private static void broadcast(MinecraftServer server, String message) {

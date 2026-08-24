@@ -10,7 +10,6 @@ import com.mojang.serialization.JsonOps;
 
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeType;
 
@@ -35,27 +34,6 @@ public final class FactoryRecipes {
     public static String typeId(RecipeType<?> type) {
         var key = BuiltInRegistries.RECIPE_TYPE.getKey(type);
         return key != null ? key.toString() : type.toString();
-    }
-
-    /**
-     * The item id of the machine this recipe runs in ({@link Recipe#getToastSymbol()},
-     * what the recipe book and JEI use as the machine icon), or null when the recipe
-     * has no machine symbol.
-     *
-     * <p>{@link Recipe#getToastSymbol()} defaults to the crafting table for recipe
-     * types that do not declare a machine icon. Crafting-table types are excluded
-     * from the export, so a crafting-table symbol means "no machine information",
-     * not a real machine: reporting it would map unrelated processing recipe types
-     * (chargers, assemblers, ...) to {@code minecraft:crafting_table}.
-     */
-    @Nullable
-    public static String toastMachine(Recipe<?> recipe) {
-        var stack = recipe.getToastSymbol();
-        if (stack.isEmpty() || stack.getItem() == Items.AIR
-                || stack.getItem() == Items.CRAFTING_TABLE) {
-            return null;
-        }
-        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }
 
     /**

@@ -7,12 +7,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
 import java.util.regex.Matcher;
 
 import org.jetbrains.annotations.Nullable;
@@ -100,7 +96,7 @@ public final class ExportCommand {
         try {
             var root = resolveRoot(server, dir);
             Files.createDirectories(root);
-            writeRecipeTypes(server, root);
+            writeRecipeTypesFile(root, new JsonObject());
             exportRecipes(server, root, source.getPlayer());
             writeChannels(root);
             patchChannelDeclaration(root);
@@ -123,7 +119,7 @@ public final class ExportCommand {
             var player = source.getPlayer();
             var language = normalizeLanguage(player == null ? "en_us" : player.getLanguage());
             var docs = copyPackagedDocs(root, language);
-            writeRecipeTypes(server, root);
+            writeRecipeTypesFile(root, new JsonObject());
             exportRecipes(server, root, source.getPlayer());
             writeChannels(root);
             patchChannelDeclaration(root);
@@ -140,11 +136,9 @@ public final class ExportCommand {
     }
 
     /**
-     * Asks the executing player's client for the JEI machine-icon map when a
-     * player ran the command; {@link MachineIconManager} merges the answer
-     * (the machines JEI shows next to each recipe type) over the freshly
-     * written {@code recipe_types.json}. Without a player there is no client
-     * to ask, so the file keeps the server-side toast-symbol data.
+     * Asks the executing player's client for the authoritative JEI machine-icon
+     * map. Without a player there is no client-side JEI runtime to query, so the
+     * freshly initialized {@code recipe_types.json} remains empty.
      */
     private static void requestMachineIcons(CommandSourceStack source, Path root) {
         var player = source.getPlayer();
@@ -152,8 +146,8 @@ public final class ExportCommand {
             MachineIconManager.request(source.getServer(), player, root);
         } else {
             AppliedFactory.LOGGER.info(
-                    "appliedfactory: no player to ask for JEI machine icons; recipe_types.json "
-                            + "keeps server-side machine data");
+                    "appliedfactory: no player to ask for JEI machine icons; "
+                            + "recipe_types.json remains empty");
         }
     }
 
@@ -264,40 +258,7 @@ public final class ExportCommand {
                 root.resolve("processing_recipes.json"), GSON.toJson(entries), StandardCharsets.UTF_8);
     }
 
-    /**
-     * Separate {@code recipe_types.json} declaring, per recipe type, the machine
-     * blocks that process it (the toast symbols the recipes themselves report),
-     * so the per-recipe export can stay {@code {id, type, inputs, outputs, json}}.
-     * When a player runs the command, {@link MachineIconManager} later merges
-     * the client's JEI catalyst machines over this file; recipe types without a
-     * declared machine (the crafting-table default is treated as "none") stay
-     * absent until JEI reports a machine for them.
-     */
-    private static void writeRecipeTypes(MinecraftServer server, Path root) throws IOException {
-        var typeMachines = new LinkedHashMap<String, Set<String>>();
-        for (var holder : server.getRecipeManager().getRecipes()) {
-            var recipe = holder.value();
-            var typeId = FactoryRecipes.typeId(recipe.getType());
-            if (FactoryRecipes.isCraftingType(typeId)) {
-                continue;
-            }
-            var machine = FactoryRecipes.toastMachine(recipe);
-            if (machine != null) {
-                typeMachines.computeIfAbsent(typeId, ignored -> new LinkedHashSet<>()).add(machine);
-            }
-        }
-        var result = new JsonObject();
-        typeMachines.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .forEach(entry -> {
-                    var array = new JsonArray();
-                    entry.getValue().stream().sorted().forEach(array::add);
-                    result.add(entry.getKey(), array);
-                });
-        writeRecipeTypesFile(root, result);
-    }
-
-    /** Package-visible so the JEI machine-icon merge rewrites the same file. */
+    /** Package-visible so the client JEI result can replace the initialized file. */
     static void writeRecipeTypesFile(Path root, JsonObject types) throws IOException {
         Files.writeString(
                 root.resolve("recipe_types.json"), GSON.toJson(types), StandardCharsets.UTF_8);

@@ -18,8 +18,8 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * shows next to its recipes — through {@code IRecipeManager
  * .createRecipeCatalystLookup(...).getItemStack()}. The resulting
  * {@code {recipeTypeId: [machineId, ...]}} map is sent back as one
- * {@link MachineIconsPayload}, so the server can fill in the representative
- * machine for recipe types that do not declare a toast symbol themselves.
+ * {@link MachineIconsPayload}, so the server can replace its recipe-type machine
+ * map with JEI's complete snapshot.
  */
 public final class ClientMachineIconsPayloadHandler {
     private static final Gson GSON = new Gson();
