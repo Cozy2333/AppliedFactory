@@ -43,6 +43,7 @@ final class ProcessingJob extends FactoryJob {
 
     @Override
     ScriptExecutionContext context() {
-        return new ScriptExecutionContext(id(), orderSide, inputs, outputs);
+        return new ScriptExecutionContext(
+                id(), orderSide, inputs, outputs, craftingRequestId);
     }
 }

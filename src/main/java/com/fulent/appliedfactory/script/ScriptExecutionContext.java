@@ -14,7 +14,8 @@ public record ScriptExecutionContext(
         UUID workflowId,
         @Nullable Direction orderNetwork,
         List<FactoryResource> inputs,
-        List<FactoryResource> outputs) {
+        List<FactoryResource> outputs,
+        @Nullable UUID craftingRequestId) {
 
     public ScriptExecutionContext {
         inputs = List.copyOf(inputs);

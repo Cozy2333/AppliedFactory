@@ -55,7 +55,7 @@ public final class McpProbeManager {
             McpProbeSink sink) {
         var host = new McpProbeHost(controller);
         var topLevel = new ScriptExecutionContext(
-                UUID.randomUUID(), null, List.of(), List.of());
+                UUID.randomUUID(), null, List.of(), List.of(), null);
         var result = FactoryProgram.load(code, host, topLevel);
         if (!result.successful()) {
             sink.onResult(requestId, new McpProbeResult(
@@ -188,6 +188,12 @@ public final class McpProbeManager {
         }
         if (action instanceof FactorySleepAction sleep) {
             return "sleep " + sleep.ticks() + " ticks";
+        }
+        if (action instanceof FactoryCraftingAction crafting) {
+            var resource = crafting.requested();
+            return "order " + resource.key().getDisplayName().getString()
+                    + " x" + resource.amount()
+                    + " on network(" + crafting.networkSide().getName() + ")";
         }
         return null;
     }

@@ -46,5 +46,7 @@ configuration was loaded (`.codex/config.toml` for Codex). The endpoint is
 - Most machines do not expose extraction capabilities for input resources, as doing so would cause inputs to be pulled unintentionally. Therefore, it makes sense for `storage()` to return a larger resource list. Meanwhile, resources appearing in `storage()` but not in `extract()` are most likely previous or in-flight inputs.
 - All valid values of `ResourceChannel` can be processed by a pattern handler — some addons have registered them as available channels.
 - Empty resources and ResourceArrays can be safely transferred (no-op), so extra checks are not needed.
+- `network.canOrder(spec)` only checks whether a crafting pattern exists. `yield network.order(spec)` waits for ingredients and a CPU, then returns the crafted output as a Resource.
+- A processing handler may call `order.cancel()` to cancel its parent AE request and return inputs still held in controller escrow. Inputs already moved into an external machine cannot be recovered automatically.
 - Those networks that contain lots of ingredients are likely the ordering networks, and those that only have machines are likely the production networks. They can also be the same one - order and produce all in one.
 - Modpacks may modify the recipes so trust the exported rather than your memory.

@@ -69,6 +69,21 @@ Resource channels are AEKeyType IDs. Items use `ae2:i`, fluids use `ae2:f`, and 
 
 `resource.pushExactlyInto(target)` moves nothing until the complete amount fits. Calling it on a `ResourceArray` treats the entire array as one atomic batch.
 
+`network.canOrder(resourceSpec)` synchronously checks whether the live network exposes a crafting pattern for the requested key. It does not simulate ingredient availability or CPU capacity.
+
+`yield network.order(resourceSpec)` asynchronously calculates and submits an AE crafting job. It retries while ingredients or a suitable CPU are unavailable and returns the completed output as an escrow-backed `Resource`:
+
+```ts
+go(function* () {
+  const storage = network("back");
+  const requested = item("minecraft:iron_ingot", 16);
+  if (storage.canOrder(requested)) {
+    const result: Resource = yield storage.order(requested);
+    yield result.to(network("front"));
+  }
+});
+```
+
 ```ts
 yield resources.to(network("back"));
 yield order.input.pushExactlyInto(machine);
@@ -86,6 +101,8 @@ const inserted = resources.pushExactlyInto(target).now();
 ## Processing patterns
 
 `registerProcessingPattern(patterns, handler)` registers processing patterns with AE2. Each definition selects the ordering network and declares its inputs and outputs. The handler receives the order inputs and the network that placed the order.
+
+`order.cancel()` cancels the parent AE crafting request. Inputs still held in controller escrow are returned to the ordering network, and AE2 returns material still held by its CPU. Material already moved into an external machine or consumed by a synchronous operation cannot be recovered automatically.
 
 ```ts
 registerProcessingPattern(

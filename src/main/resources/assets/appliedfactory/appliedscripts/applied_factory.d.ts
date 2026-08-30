@@ -20,7 +20,7 @@ type NbtCompound = Readonly<Record<string, NbtValue>>;
 /** Registered AEKeyType ID, such as "ae2:i" for items or "ae2:f" for fluids. */
 type ResourceChannel = string;
 
-type Action = SleepAction | TransferAction<unknown>;
+type Action = SleepAction | TransferAction<unknown> | CraftingAction;
 
 /** An AE key and amount specification without a movable source. */
 interface ResourceSpec {
@@ -60,6 +60,9 @@ interface TransferAction<TResult> {
 }
 
 interface SleepAction {}
+
+/** Yield-only AE network crafting request. The yield expression returns a Resource. */
+interface CraftingAction {}
 
 interface BlockView {
   readonly id: string;
@@ -113,6 +116,10 @@ interface Network {
   extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
   storage(): ResourceArray;
   storage(channel: ResourceChannel): ResourceArray;
+  /** Whether the network currently exposes a crafting pattern for this key. */
+  canOrder(resource: ResourceSpec): boolean;
+  /** Waits for a complete AE craft and returns its output as a managed Resource. */
+  order(resource: ResourceSpec): CraftingAction;
 }
 
 type ResourceTarget = Network | Bus;
@@ -128,16 +135,18 @@ declare function network(side: NetworkSide): Network;
 declare function sleep(ticks: number): SleepAction;
 
 /** Starts a passive generator workflow. */
-declare function go(factory: () => Generator<Action, unknown, unknown>): void;
+declare function go(factory: () => Generator<Action, unknown, any>): void;
 
 interface Order {
   readonly input: ResourceArray;
   readonly network: Network;
+  /** Cancels the parent AE request and returns inputs still held by the controller. */
+  cancel(): boolean;
 }
 
 declare function registerProcessingPattern(
   patterns: readonly PatternDefinition[],
-  handler: (order: Order) => Generator<Action, unknown, unknown>,
+  handler: (order: Order) => Generator<Action, unknown, any>,
 ): void;
 
 declare function log(message: string): void;

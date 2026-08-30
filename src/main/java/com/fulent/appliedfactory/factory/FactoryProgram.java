@@ -81,6 +81,18 @@ public final class FactoryProgram {
 
         FactoryTransferResult performTransfer(UUID workflowId, FactoryTransferAction action);
 
+        /** True when the live network currently exposes a crafting pattern for this key. */
+        boolean canOrder(Direction networkSide, FactoryResource requested);
+
+        FactoryCraftingResult performCraftingOrder(
+                UUID workflowId, FactoryCraftingAction action);
+
+        /** Cancels an outbound network order owned by a script workflow, if present. */
+        void cancelCraftingOrder(UUID workflowId);
+
+        /** Cancels the parent AE request of a processing-pattern workflow. */
+        boolean cancelCraftingRequest(UUID craftingRequestId);
+
         Optional<FactoryResourceRef> renameItem(
                 UUID workflowId, FactoryResourceRef item, String name);
 
@@ -116,6 +128,11 @@ public final class FactoryProgram {
                 List<FactoryResource> resources);
 
         Set<UUID> escrowIds();
+
+        /** Whether this program may reclaim the allocation as an orphan. */
+        default boolean canRecoverEscrow(UUID workflowId) {
+            return true;
+        }
 
         boolean recoverEscrow(UUID workflowId);
 
@@ -226,8 +243,9 @@ public final class FactoryProgram {
             return false;
         }
         var id = UUID.randomUUID();
+        var craftingRequestId = CraftingRequestContext.current();
         var context = new com.fulent.appliedfactory.script.ScriptExecutionContext(
-                id, orderSide, inputs, outputs);
+                id, orderSide, inputs, outputs, craftingRequestId);
         // Calling a generator function only creates its generator object; its body and any
         // .now() calls begin on the first later scheduler step, after AE accepted the push.
         var workflow = runtime.createWorkflow(handler, context);
@@ -244,7 +262,7 @@ public final class FactoryProgram {
                 orderSide,
                 inputs,
                 outputs,
-                CraftingRequestContext.current()));
+                craftingRequestId));
         host.markChanged();
         return true;
     }
@@ -263,6 +281,10 @@ public final class FactoryProgram {
         for (var job : List.copyOf(jobs)) {
             if (jobs.contains(job)) {
                 advance(job);
+                // order.cancel() may have been called while advancing this generator.
+                // Remove every sibling handler for the same AE request before any of
+                // them gets another scheduler turn.
+                processCancellations();
             }
         }
         recoverOrphanEscrows();
@@ -277,6 +299,9 @@ public final class FactoryProgram {
     }
 
     public void discard() {
+        for (var job : jobs) {
+            host.cancelCraftingOrder(job.id());
+        }
         jobs.clear();
         stoppedPassives.clear();
         pendingCancellations.clear();
@@ -287,9 +312,15 @@ public final class FactoryProgram {
         if (pendingCancellations.isEmpty()) {
             return;
         }
-        jobs.removeIf(job -> job instanceof ProcessingJob processing
-                && processing.craftingRequestId() != null
-                && pendingCancellations.contains(processing.craftingRequestId()));
+        var canceled = jobs.stream()
+                .filter(job -> job instanceof ProcessingJob processing
+                        && processing.craftingRequestId() != null
+                        && pendingCancellations.contains(processing.craftingRequestId()))
+                .toList();
+        canceled.forEach(job -> {
+            jobs.remove(job);
+            host.cancelCraftingOrder(job.id());
+        });
         pendingCancellations.clear();
         host.markChanged();
     }
@@ -306,7 +337,7 @@ public final class FactoryProgram {
             }
             var id = UUID.randomUUID();
             var context = new com.fulent.appliedfactory.script.ScriptExecutionContext(
-                    id, null, List.of(), List.of());
+                    id, null, List.of(), List.of(), null);
             var workflow = runtime.createWorkflow(ScriptHandlerRef.passive(index), context);
             if (!workflow.successful()) {
                 stoppedPassives.add(index);
@@ -357,6 +388,30 @@ public final class FactoryProgram {
                 }
                 continue;
             }
+            if (pending instanceof FactoryCraftingAction crafting) {
+                try {
+                    var result = host.performCraftingOrder(job.id(), crafting);
+                    if (result.status() == FactoryCraftingResult.Status.WAITING) {
+                        job.setWaiting(crafting, job.actionStartedTick());
+                        return;
+                    }
+                    if (result.status() == FactoryCraftingResult.Status.FAILED) {
+                        finish(job, result.failure());
+                        return;
+                    }
+                    job.clearWaiting();
+                    var resource = new FactoryResourceRef(
+                            FactoryResourceOrigin.escrow(job.id()),
+                            List.of(result.resource()));
+                    if (!resumeGenerator(job, resource)) {
+                        return;
+                    }
+                } catch (RuntimeException exception) {
+                    finish(job, messageOf(exception));
+                    return;
+                }
+                continue;
+            }
             return;
         }
     }
@@ -365,6 +420,12 @@ public final class FactoryProgram {
     private boolean resumeGenerator(FactoryJob job, Object result) {
         var step = runtime.advance(
                 job.workflow(), job.context(), result, job.firstStep());
+        if (job instanceof ProcessingJob processing
+                && processing.craftingRequestId() != null
+                && pendingCancellations.contains(processing.craftingRequestId())) {
+            finish(job, null);
+            return false;
+        }
         if (step instanceof ScriptStep.Waiting waiting) {
             job.setWaiting(waiting.action(), host.tick());
             return true;
@@ -379,6 +440,7 @@ public final class FactoryProgram {
 
     private void finish(FactoryJob job, String failure) {
         jobs.remove(job);
+        host.cancelCraftingOrder(job.id());
         if (job instanceof PassiveJob passive) {
             stoppedPassives.add(passive.passiveIndex());
         }
@@ -392,7 +454,7 @@ public final class FactoryProgram {
     private void recoverOrphanEscrows() {
         var active = jobs.stream().map(FactoryJob::id).collect(java.util.stream.Collectors.toSet());
         for (var escrowId : host.escrowIds()) {
-            if (!active.contains(escrowId)) {
+            if (!active.contains(escrowId) && host.canRecoverEscrow(escrowId)) {
                 try {
                     host.recoverEscrow(escrowId);
                 } catch (RuntimeException exception) {

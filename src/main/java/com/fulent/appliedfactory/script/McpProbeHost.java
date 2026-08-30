@@ -10,6 +10,8 @@ import java.util.UUID;
 import com.fulent.appliedfactory.blockentity.FactoryControllerBlockEntity;
 import com.fulent.appliedfactory.factory.FactoryBusAddress;
 import com.fulent.appliedfactory.factory.FactoryBusTarget;
+import com.fulent.appliedfactory.factory.FactoryCraftingAction;
+import com.fulent.appliedfactory.factory.FactoryCraftingResult;
 import com.fulent.appliedfactory.factory.FactoryEndpoint;
 import com.fulent.appliedfactory.factory.FactoryProgram;
 import com.fulent.appliedfactory.factory.FactoryResource;
@@ -130,6 +132,29 @@ public final class McpProbeHost implements FactoryProgram.Host {
     }
 
     @Override
+    public boolean canOrder(Direction networkSide, FactoryResource requested) {
+        return controller.canOrder(networkSide, requested);
+    }
+
+    @Override
+    public FactoryCraftingResult performCraftingOrder(
+            UUID workflowId, FactoryCraftingAction action) {
+        controller.retainExternalWorkflow(workflowId);
+        return controller.performCraftingOrder(workflowId, action);
+    }
+
+    @Override
+    public void cancelCraftingOrder(UUID workflowId) {
+        controller.cancelCraftingOrder(workflowId);
+        controller.releaseExternalWorkflow(workflowId);
+    }
+
+    @Override
+    public boolean cancelCraftingRequest(UUID craftingRequestId) {
+        return false;
+    }
+
+    @Override
     public Optional<FactoryResourceRef> renameItem(
             UUID workflowId, FactoryResourceRef item, String name) {
         return controller.renameItem(workflowId, item, name);
@@ -174,11 +199,7 @@ public final class McpProbeHost implements FactoryProgram.Host {
         return controller.setBusRedstoneOutput(bus, level);
     }
 
-    /**
-     * Probe programs never own escrow allocations. Probes create no processing orders, and
-     * the controller's own program recovers any stray allocation the executor may create on
-     * a failed rollback.
-     */
+    /** Probe programs do not accept processing inputs; network-order output is reserved separately. */
     @Override
     public boolean createEscrow(
             UUID workflowId, Direction recoverySide, List<FactoryResource> resources) {

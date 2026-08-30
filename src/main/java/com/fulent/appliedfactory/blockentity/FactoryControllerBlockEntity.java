@@ -18,8 +18,12 @@ import com.fulent.appliedfactory.AppliedFactory;
 import com.fulent.appliedfactory.block.FactoryControllerBlock;
 import com.fulent.appliedfactory.factory.FactoryActionExecutor;
 import com.fulent.appliedfactory.factory.FactoryBusAddress;
+import com.fulent.appliedfactory.factory.CraftingRequestRegistry;
+import com.fulent.appliedfactory.factory.FactoryCraftingAction;
+import com.fulent.appliedfactory.factory.FactoryCraftingResult;
 import com.fulent.appliedfactory.factory.FactoryEndpoint;
 import com.fulent.appliedfactory.factory.FactoryEscrow;
+import com.fulent.appliedfactory.factory.FactoryNetworkOrders;
 import com.fulent.appliedfactory.factory.FactoryProgram;
 import com.fulent.appliedfactory.factory.FactoryResource;
 import com.fulent.appliedfactory.factory.FactoryResourceOrigin;
@@ -47,6 +51,8 @@ import appeng.api.networking.IGridNodeListener;
 import appeng.api.networking.IInWorldGridNodeHost;
 import appeng.api.networking.IManagedGridNode;
 import appeng.api.networking.crafting.ICraftingProvider;
+import appeng.api.networking.crafting.ICraftingLink;
+import appeng.api.networking.crafting.ICraftingRequester;
 import appeng.api.networking.energy.IEnergyService;
 import appeng.api.networking.security.IActionHost;
 import appeng.api.networking.security.IActionSource;
@@ -54,6 +60,7 @@ import appeng.api.stacks.AEKey;
 import appeng.api.stacks.AEKeyType;
 import appeng.api.stacks.KeyCounter;
 import appeng.api.util.AECableType;
+import com.google.common.collect.ImmutableSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -90,12 +97,18 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     private final FactoryActionExecutor actionExecutor = new FactoryActionExecutor(
             escrow, this::resolveBusTarget, this::getNetworkStorage,
             this::recoverySideForBus, this::setChanged);
+    private final FactoryNetworkOrders networkOrders = new FactoryNetworkOrders(
+            this::getCraftingEndpoint,
+            (workflowId, recoverySide, resource) ->
+                    escrow.recover(workflowId, recoverySide, List.of(resource)));
     private final Map<Direction, NetworkAttachment> networkAttachments =
             new EnumMap<>(Direction.class);
     private final Map<Direction, IManagedGridNode> networkNodes =
             new EnumMap<>(Direction.class);
     private final Set<UUID> logSubscribers = new LinkedHashSet<>();
     private final Set<String> reportedScriptFailures = new LinkedHashSet<>();
+    /** Probe workflow escrows must not be reclaimed by the production scheduler. */
+    private final Set<UUID> externalWorkflowIds = new LinkedHashSet<>();
 
     private List<OfferedPattern> offeredPatterns = List.of();
     private String controllerProgram = ControllerProgram.DEFAULT_SOURCE;
@@ -131,7 +144,8 @@ public final class FactoryControllerBlockEntity extends BlockEntity
                     .setIdlePowerUsage(1.0D / Direction.values().length)
                     .setTagName("network_" + direction.getName())
                     .setVisualRepresentation(Items.IRON_INGOT)
-                    .addService(ICraftingProvider.class, attachment));
+                    .addService(ICraftingProvider.class, attachment)
+                    .addService(ICraftingRequester.class, attachment));
         }
     }
 
@@ -191,12 +205,13 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     }
 
     private void destroyGridNodes() {
-        networkNodes.values().forEach(IManagedGridNode::destroy);
-        invalidateBusTopology();
         if (program != null) {
             program.discard();
             program = null;
         }
+        networkOrders.cancelAll();
+        networkNodes.values().forEach(IManagedGridNode::destroy);
+        invalidateBusTopology();
         programInitialized = false;
         programLoadNotBeforeTick = Long.MAX_VALUE;
     }
@@ -638,6 +653,31 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     }
 
     @Override
+    public boolean canOrder(Direction networkSide, FactoryResource requested) {
+        return networkOrders.canOrder(networkSide, requested);
+    }
+
+    @Override
+    public FactoryCraftingResult performCraftingOrder(
+            UUID workflowId, FactoryCraftingAction action) {
+        return networkOrders.advance(workflowId, action, tick());
+    }
+
+    @Override
+    public void cancelCraftingOrder(UUID workflowId) {
+        networkOrders.cancel(workflowId);
+    }
+
+    @Override
+    public boolean cancelCraftingRequest(UUID craftingRequestId) {
+        var canceled = CraftingRequestRegistry.cancel(craftingRequestId);
+        if (canceled && program != null) {
+            program.cancelJobs(craftingRequestId);
+        }
+        return canceled;
+    }
+
+    @Override
     public Optional<com.fulent.appliedfactory.factory.FactoryResourceRef> renameItem(
             UUID workflowId,
             com.fulent.appliedfactory.factory.FactoryResourceRef item,
@@ -715,8 +755,21 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     }
 
     @Override
+    public boolean canRecoverEscrow(UUID workflowId) {
+        return !externalWorkflowIds.contains(workflowId);
+    }
+
+    @Override
     public boolean recoverEscrow(UUID workflowId) {
         return actionExecutor.recoverEscrow(workflowId);
+    }
+
+    public void retainExternalWorkflow(UUID workflowId) {
+        externalWorkflowIds.add(workflowId);
+    }
+
+    public void releaseExternalWorkflow(UUID workflowId) {
+        externalWorkflowIds.remove(workflowId);
     }
 
     @Override
@@ -865,6 +918,20 @@ public final class FactoryControllerBlockEntity extends BlockEntity
                 IActionSource.ofMachine(attachment)));
     }
 
+    private Optional<FactoryNetworkOrders.Endpoint> getCraftingEndpoint(Direction side) {
+        var node = networkNodes.get(side);
+        var attachment = networkAttachments.get(side);
+        if (level == null || node == null || attachment == null
+                || !node.isOnline() || node.getGrid() == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new FactoryNetworkOrders.Endpoint(
+                level,
+                node.getGrid().getCraftingService(),
+                attachment,
+                IActionSource.ofMachine(attachment)));
+    }
+
     private static List<FactoryResource> collectInputs(
             IPatternDetails details, KeyCounter[] inputHolder) {
         // AE2's stock processing pattern condenses equal keys for crafting, then
@@ -951,6 +1018,9 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     /** Recovery must not depend on the current script being valid or loadable. */
     private void recoverAllEscrows() {
         for (var escrowId : escrow.allocationIds()) {
+            if (externalWorkflowIds.contains(escrowId)) {
+                continue;
+            }
             try {
                 actionExecutor.recoverEscrow(escrowId);
             } catch (RuntimeException exception) {
@@ -1068,7 +1138,8 @@ public final class FactoryControllerBlockEntity extends BlockEntity
                 new BusTopology(Map.of(), Map.of(), Map.of());
     }
 
-    private final class NetworkAttachment implements ICraftingProvider, IActionHost {
+    private final class NetworkAttachment
+            implements ICraftingProvider, ICraftingRequester, IActionHost {
         private final Direction side;
 
         private NetworkAttachment(Direction side) {
@@ -1088,6 +1159,25 @@ public final class FactoryControllerBlockEntity extends BlockEntity
         @Override
         public boolean isBusy() {
             return FactoryControllerBlockEntity.this.isBusy(side);
+        }
+
+        @Override
+        public ImmutableSet<ICraftingLink> getRequestedJobs() {
+            return ImmutableSet.copyOf(networkOrders.links(side));
+        }
+
+        @Override
+        public long insertCraftedItems(
+                ICraftingLink link,
+                AEKey what,
+                long amount,
+                Actionable mode) {
+            return networkOrders.insertCraftedItems(side, link, what, amount, mode);
+        }
+
+        @Override
+        public void jobStateChange(ICraftingLink link) {
+            networkOrders.jobStateChange(link);
         }
 
         @Override

@@ -21,6 +21,6 @@ final class PassiveJob extends FactoryJob {
 
     @Override
     ScriptExecutionContext context() {
-        return new ScriptExecutionContext(id(), null, List.of(), List.of());
+        return new ScriptExecutionContext(id(), null, List.of(), List.of(), null);
     }
 }

@@ -62,7 +62,7 @@ registerProcessingPattern(
 | `Bus` | 网络中的工厂总线；负责访问它面对的机器或世界方块 |
 | `Resource` | 带来源、channel、key 与数量的不可变资源句柄 |
 | `ResourceArray` | 保留资源槽位顺序的只读资源数组，并提供批量转移 |
-| `Action` | 可 `yield` 等待或用 `.now()` 单次尝试的动作 |
+| `Action` | 可 `yield` 等待的动作；资源转移动作还可用 `.now()` 单次尝试 |
 | `Order` | AE2 加工订单，包含输入资源与发起订单的网络 |
 
 常用全局入口：
@@ -94,6 +94,25 @@ if (network("left").isSameNetwork(network("right"))) {
 ### 4.2 总线发现与稳定句柄
 
 `network.buses` 每次读取都返回当前拓扑快照。`network.onChange(callback)` 只在工厂总线加入或离开 AE 网络时同步调用，普通机器方块更新不会触发；回调可以重建缓存的句柄数组，但不能 `yield`。
+
+### 3.1 主动网络订单
+
+`network.canOrder(resourceSpec)` 同步查询网络当前是否公开了该 key 的合成样板。它不进行完整合成模拟，因此不保证材料充足或存在合适的空闲 CPU。
+
+`network.order(resourceSpec)` 返回只能 `yield` 的合成 Action。调度器异步计算 AE 合成计划；材料或 CPU 暂不可用时每秒重试，订单完成后 `yield` 表达式返回一个来源为 `escrow` 的 `Resource`，可继续转移到网络或总线：
+
+```ts
+go(function* () {
+  const storage = network("back");
+  const requested = item("minecraft:iron_ingot", 16);
+  if (storage.canOrder(requested)) {
+    const result: Resource = yield storage.order(requested);
+    yield result.to(network("front"));
+  }
+});
+```
+
+脚本 workflow 与主动订单都不跨控制器卸载或脚本重载持久化；此时仍在运行的 AE 订单会被取消，已经收到控制器托管区的部分成品按资源回收规则返还。
 
 `Network`、`Bus`、存储端点和资源来源保存的是稳定地址，每次查询或执行动作时都会重新解析：
 
@@ -186,6 +205,8 @@ const inserted = resource.pushExactlyInto(machine).now();
 
 - `order.input`：来自本次订单、保留输入槽位顺序的 `ResourceArray`；
 - `order.network`：发起本次订单的实时网络句柄。
+
+`order.cancel()` 返回是否成功发出取消。成功后，同一父级 AE 请求产生的处理器会停止，控制器托管区内尚未消耗的 `order.input` 会返还下单网络，AE CPU 内尚未使用的材料也由 AE2 返库。已经转移进外部机器、掉落到世界或被同步操作消耗的材料不再受控制器托管，无法自动取回。
 
 AE2 在样板的全部输出回到订单网络后认定加工完成，输出来自哪台机器并不重要。通常让订单处理器只负责可靠地推送输入，再由独立 `go(function* () { ... })` workflow 持续拉取产物，结构更简单。多步加工通常应拆成多个样板，让 AE2 负责编排；高频小订单会增加 I/O 开销，可按机器吞吐同比放大输入与输出数量。
 

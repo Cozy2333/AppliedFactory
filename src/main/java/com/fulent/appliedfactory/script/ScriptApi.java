@@ -10,6 +10,7 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 
 import com.fulent.appliedfactory.factory.FactoryBusAddress;
+import com.fulent.appliedfactory.factory.FactoryCraftingAction;
 import com.fulent.appliedfactory.factory.FactoryEndpoint;
 import com.fulent.appliedfactory.factory.FactoryProgram;
 import com.fulent.appliedfactory.factory.FactoryResource;
@@ -182,6 +183,45 @@ final class ScriptApi {
         return resourceArray(origin, host.storageContents(endpoint, channel));
     }
 
+    /** Accepts a stack()/item() handle or the exported plain ResourceSpec shape. */
+    FactoryResource resourceSpec(Object raw, String name) {
+        var delegate = binder.delegate(raw);
+        if (delegate instanceof JsResourceSpec spec) {
+            if (spec.amount() <= 0) {
+                throw JsValues.error(name + " requires an exact positive resource spec");
+            }
+            return new FactoryResource(spec.key(), spec.amount());
+        }
+        if (delegate instanceof JsResource resource) {
+            var bundle = resource.resource().bundle();
+            if (bundle.size() == 1) {
+                return bundle.getFirst();
+            }
+        }
+        if (raw instanceof Value object && object.hasMembers() && object.hasMember("channel")) {
+            var rawChannel = object.getMember("channel");
+            var rawKey = object.getMember("key");
+            var rawAmount = object.getMember("amount");
+            if (rawKey != null && rawKey.hasMembers()
+                    && rawAmount != null && !rawAmount.isNull()) {
+                var channel = resolveChannel(JsValues.string(rawChannel));
+                var key = channel.loadKeyFromTag(
+                        host.registries(), NbtJs.fromObject(rawKey, name + ".key"));
+                if (key == null) {
+                    throw JsValues.error(
+                            name + " has an invalid key for channel " + channel.getId());
+                }
+                var amount = JsValues.number(rawAmount, name + ".amount");
+                if (!Double.isFinite(amount) || amount != Math.rint(amount)
+                        || amount <= 0 || amount > 9_007_199_254_740_991D) {
+                    throw JsValues.error(name + " requires an exact positive resource amount");
+                }
+                return new FactoryResource(key, (long) amount);
+            }
+        }
+        throw JsValues.error(name + " requires a ResourceSpec");
+    }
+
     List<String> channels(FactoryBusAddress bus) {
         return host.channels(bus);
     }
@@ -189,8 +229,17 @@ final class ScriptApi {
     JsOrder order(ScriptExecutionContext context) {
         var origin = FactoryResourceOrigin.escrow(context.workflowId());
         return new JsOrder(
+                this,
                 orderedResourceArray(origin, context.inputs()),
-                new JsNetwork(this, context.orderNetwork()));
+                new JsNetwork(this, context.orderNetwork()),
+                context.craftingRequestId());
+    }
+
+    boolean cancelProcessingOrder(java.util.UUID craftingRequestId) {
+        if (craftingRequestId == null) {
+            throw JsValues.error("order.cancel() is only available in a processing handler");
+        }
+        return host.cancelCraftingRequest(craftingRequestId);
     }
 
     FactoryEndpoint requireEndpoint(Object value) {
@@ -526,38 +575,7 @@ final class JsGlobals {
      * baked recipe globals can be referenced at registration directly.
      */
     private FactoryResource spec(Object raw, String name) {
-        var delegate = api.delegate(raw);
-        if (delegate instanceof JsResourceSpec spec) {
-            if (spec.amount() <= 0) {
-                throw JsValues.error(name + " requires exact positive resource specs");
-            }
-            return new FactoryResource(spec.key(), spec.amount());
-        }
-        if (raw instanceof Value object && object.hasMembers()) {
-            if (object.hasMember("channel")) {
-                var rawChannel = object.getMember("channel");
-                var rawKey = object.getMember("key");
-                var rawAmount = object.getMember("amount");
-                if (rawKey != null && rawKey.hasMembers() && rawAmount != null && !rawAmount.isNull()) {
-                    var channel = ScriptApi.resolveChannel(JsValues.string(rawChannel));
-                    var key = channel.loadKeyFromTag(
-                            api.host().registries(),
-                            NbtJs.fromObject(rawKey, name + ".key"));
-                    if (key == null) {
-                        throw JsValues.error(
-                                name + " has an invalid key for channel " + channel.getId());
-                    }
-                    var amount = JsValues.number(rawAmount, name + ".amount");
-                    if (!Double.isFinite(amount) || amount != Math.rint(amount)
-                            || amount <= 0) {
-                        throw JsValues.error(
-                                name + " requires exact positive resource amounts");
-                    }
-                    return new FactoryResource(key, (long) amount);
-                }
-            }
-        }
-        throw JsValues.error(name + " requires resource specs");
+        return api.resourceSpec(raw, name);
     }
 
     private static List<GenericStack> genericStacks(List<FactoryResource> resources) {
@@ -658,6 +676,15 @@ final class JsNetwork {
 
     public Object storage(Object channel) {
         return api.storage(FactoryEndpoint.network(side), channel);
+    }
+
+    public boolean canOrder(Object resource) {
+        return api.host().canOrder(side, api.resourceSpec(resource, "network.canOrder"));
+    }
+
+    public JsCraftingAction order(Object resource) {
+        return new JsCraftingAction(new FactoryCraftingAction(
+                side, api.resourceSpec(resource, "network.order")));
     }
 }
 
@@ -940,12 +967,20 @@ final class JsResourceOrigin {
 
 @JsBridge
 final class JsOrder {
+    private final ScriptApi api;
     private final Object input;
     private final JsNetwork network;
+    private final java.util.UUID craftingRequestId;
 
-    JsOrder(Object input, JsNetwork network) {
+    JsOrder(
+            ScriptApi api,
+            Object input,
+            JsNetwork network,
+            java.util.UUID craftingRequestId) {
+        this.api = api;
         this.input = input;
         this.network = network;
+        this.craftingRequestId = craftingRequestId;
     }
 
     @JsProperty
@@ -956,6 +991,10 @@ final class JsOrder {
     @JsProperty
     public JsNetwork getNetwork() {
         return network;
+    }
+
+    public boolean cancel() {
+        return api.cancelProcessingOrder(craftingRequestId);
     }
 }
 

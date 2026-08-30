@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import com.fulent.appliedfactory.AppliedFactory;
 import com.fulent.appliedfactory.blockentity.FactoryControllerBlockEntity;
 import com.fulent.appliedfactory.factory.CraftingRequestContext;
+import com.fulent.appliedfactory.factory.CraftingRequestRegistry;
 
 import appeng.api.networking.crafting.ICraftingLink;
 import appeng.api.networking.energy.IEnergyService;
@@ -48,7 +49,9 @@ public abstract class CraftingCpuLogicMixin {
             IEnergyService energyService, Level level,
             CallbackInfoReturnable<Integer> cir) {
         try {
-            CraftingRequestContext.set(craftingIdOf((CraftingCpuLogic) (Object) this));
+            var link = ((CraftingCpuLogic) (Object) this).getLastLink();
+            CraftingRequestRegistry.track(link);
+            CraftingRequestContext.set(link == null ? null : link.getCraftingID());
         } catch (RuntimeException exception) {
             AppliedFactory.LOGGER.error("Failed to capture the factory crafting request id", exception);
         }
@@ -64,6 +67,8 @@ public abstract class CraftingCpuLogicMixin {
 
     @Inject(method = "finishJob", at = @At("HEAD"))
     private void factoryNotifyCraftingRequestFinished(boolean success, CallbackInfo ci) {
+        var craftingId = craftingIdOf((CraftingCpuLogic) (Object) this);
+        CraftingRequestRegistry.forget(craftingId);
         // A successful finish means the request's outputs are already delivered (by the job that
         // pushed them); that job finishes on its own. Only cancelled/failed requests should cancel
         // the still-running factory jobs that were stamped with this request id.
@@ -71,7 +76,6 @@ public abstract class CraftingCpuLogicMixin {
             return;
         }
         try {
-            var craftingId = craftingIdOf((CraftingCpuLogic) (Object) this);
             if (craftingId == null) {
                 return;
             }

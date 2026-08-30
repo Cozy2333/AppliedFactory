@@ -21,7 +21,7 @@ type NbtCompound = Readonly<Record<string, NbtValue>>;
 /** AEKeyType 的注册表 ID，例如物品为 "ae2:i"、流体为 "ae2:f"。 */
 type ResourceChannel = string;
 
-type Action = SleepAction | TransferAction<unknown>;
+type Action = SleepAction | TransferAction<unknown> | CraftingAction;
 
 /** 只描述要匹配的 AE key 和数量，不是可操作的来源句柄。 */
 interface ResourceSpec {
@@ -75,6 +75,9 @@ interface TransferAction<TResult> {
 }
 
 interface SleepAction {}
+
+/** 网络合成订单；只能 yield，完成后 yield 表达式返回成品 Resource。 */
+interface CraftingAction {}
 
 interface BlockView {
   readonly id: string;
@@ -164,6 +167,10 @@ interface Network {
    */
   storage(): ResourceArray;
   storage(channel: ResourceChannel): ResourceArray;
+  /** 当前网络是否存在该 key 的可合成样板；不模拟材料或 CPU 容量。 */
+  canOrder(resource: ResourceSpec): boolean;
+  /** 向网络提交合成；yield 会等待材料、CPU 和成品，并返回托管的成品资源。 */
+  order(resource: ResourceSpec): CraftingAction;
 }
 
 type ResourceTarget = Network | Bus;
@@ -182,18 +189,20 @@ declare function sleep(ticks: number): SleepAction;
 
 /** 开始一条被动产线。被动产线不返回，一旦返回不会主动重启。
  * 与主动网络下单配合使用可以用于统一推送能源或拉取返回 */
-declare function go(factory: () => Generator<Action, unknown, unknown>): void;
+declare function go(factory: () => Generator<Action, unknown, any>): void;
 
 interface Order {
   /** 表示该订单的输入资源，保留样板输入槽位顺序；同类重复输入不会合并，可按索引分别路由。 */
   readonly input: ResourceArray;
   /** 下单网络 */
   readonly network: Network;
+  /** 取消父级 AE 合成请求，并让仍在控制器托管区内的输入返还下单网络。 */
+  cancel(): boolean;
 }
 /** 注册若干个处理样板，handler参数为Order */
 declare function registerProcessingPattern(
   patterns: readonly PatternDefinition[],
-  handler: (order: Order) => Generator<Action, unknown, unknown>,
+  handler: (order: Order) => Generator<Action, unknown, any>,
 ): void;
 
 /** 把消息推送给订阅了该控制器日志的玩家，并写入服务器日志；

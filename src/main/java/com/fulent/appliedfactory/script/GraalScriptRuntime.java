@@ -150,6 +150,9 @@ public final class GraalScriptRuntime implements ScriptRuntime {
                 if (delegate instanceof JsSleepAction sleep) {
                     return new ScriptStep.Waiting(sleep.action());
                 }
+                if (delegate instanceof JsCraftingAction crafting) {
+                    return new ScriptStep.Waiting(crafting.action());
+                }
                 return new ScriptStep.Failed("Workflow yielded a value that is not a factory Action");
             } finally {
                 loaded.api().unbind();
