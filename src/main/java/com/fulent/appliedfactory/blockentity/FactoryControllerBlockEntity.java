@@ -28,6 +28,7 @@ import com.fulent.appliedfactory.factory.FactoryTransferResult;
 import com.fulent.appliedfactory.part.FactoryBusPart;
 import com.fulent.appliedfactory.script.CompiledControllerProgram;
 import com.fulent.appliedfactory.script.ControllerProgram;
+import com.fulent.appliedfactory.script.ControllerProgramComponent;
 import com.fulent.appliedfactory.script.ControllerProgramStore;
 import com.fulent.appliedfactory.script.ControllerProgramSources;
 import com.fulent.appliedfactory.script.ProgramLoadResult;
@@ -56,6 +57,7 @@ import appeng.api.util.AECableType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -114,6 +116,8 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     private boolean programStoreResolved;
     private BusTopology busTopology = BusTopology.EMPTY;
     private boolean busTopologyDirty = true;
+    /** Program payload carried by the item this controller was just placed from. */
+    private ControllerProgramComponent pendingPlacedProgram;
 
     public FactoryControllerBlockEntity(BlockPos pos, BlockState state) {
         super(AppliedFactory.FACTORY_CONTROLLER_BLOCK_ENTITY.get(), pos, state);
@@ -141,10 +145,37 @@ public final class FactoryControllerBlockEntity extends BlockEntity
         if (level != null) {
             networkNodes.values().forEach(node -> node.create(level, worldPosition));
             if (!level.isClientSide && !programInitialized) {
+                adoptPlacedProgram();
                 reloadControllerProgramFromStore();
                 scheduleProgramInitialization();
             }
         }
+    }
+
+    /**
+     * A freshly placed controller restores the program snapshot carried on its item,
+     * re-registering the same world-store entry the broken controller removed.
+     */
+    private void adoptPlacedProgram() {
+        if (pendingPlacedProgram == null || !(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        var payload = pendingPlacedProgram;
+        pendingPlacedProgram = null;
+        var source = ControllerProgram.normalizeLineEndings(payload.source());
+        var compiledSource = ControllerProgram.normalizeLineEndings(payload.compiledSource());
+        if (!ControllerProgram.isWithinLimit(source)
+                || !ControllerProgram.isWithinLimit(compiledSource)) {
+            return;
+        }
+        controllerProgramId = payload.programId();
+        controllerProgram = source;
+        compiledControllerProgram = compiledSource;
+        controllerProgramPath = ControllerProgram.isWorkspacePathWithinLimit(payload.workspacePath())
+                ? payload.workspacePath() : "";
+        controllerProgramUpdatedAt = payload.updatedAt();
+        programStoreResolved = false;
+        ensureControllerProgramStored();
     }
 
     @Override
@@ -233,6 +264,27 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     @Override
     public Packet<ClientGamePacketListener> getUpdatePacket() {
         return ClientboundBlockEntityDataPacket.create(this);
+    }
+
+    @Override
+    protected void applyImplicitComponents(BlockEntity.DataComponentInput componentInput) {
+        super.applyImplicitComponents(componentInput);
+        pendingPlacedProgram = componentInput.get(
+                AppliedFactory.CONTROLLER_PROGRAM_COMPONENT.get());
+    }
+
+    @Override
+    protected void collectImplicitComponents(DataComponentMap.Builder components) {
+        super.collectImplicitComponents(components);
+        if (controllerProgramId != null) {
+            components.set(AppliedFactory.CONTROLLER_PROGRAM_COMPONENT.get(),
+                    new ControllerProgramComponent(
+                            controllerProgramId,
+                            controllerProgram,
+                            compiledControllerProgram,
+                            controllerProgramPath,
+                            controllerProgramUpdatedAt));
+        }
     }
 
     @Override
@@ -866,6 +918,11 @@ public final class FactoryControllerBlockEntity extends BlockEntity
                 controller.program.step();
             } else {
                 controller.recoverAllEscrows();
+            }
+            // 同步运行/空闲外观状态（active 方块属性驱动模型切换）
+            var active = controller.isActive();
+            if (state.getValue(FactoryControllerBlock.ACTIVE) != active) {
+                level.setBlock(pos, state.setValue(FactoryControllerBlock.ACTIVE, active), 3);
             }
         }
     }

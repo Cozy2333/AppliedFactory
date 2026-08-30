@@ -67,6 +67,21 @@ public final class ClientRecipeDumpPayloadHandler {
             sendChunk(requestId, 0, 1, false, "[]");
             return;
         }
+        var entries = buildEntries();
+        var json = GSON.toJson(entries);
+        var chunkCount = (json.length() + RecipeDumpChunkPayload.MAX_CHUNK_CHARS - 1)
+                / RecipeDumpChunkPayload.MAX_CHUNK_CHARS;
+        var total = Math.max(chunkCount, 1);
+        for (int index = 0; index < total; index++) {
+            var from = index * RecipeDumpChunkPayload.MAX_CHUNK_CHARS;
+            var to = Math.min(json.length(), from + RecipeDumpChunkPayload.MAX_CHUNK_CHARS);
+            sendChunk(requestId, index, total, FactoryJeiPlugin.runtime() != null,
+                    json.substring(from, to));
+        }
+    }
+
+    /** Builds the JEI-normalized recipe export without sending it over the network. */
+    public static JsonArray buildEntries() {
         var entries = new JsonArray();
         var runtime = FactoryJeiPlugin.runtime();
         if (runtime != null) {
@@ -78,15 +93,7 @@ public final class ClientRecipeDumpPayloadHandler {
                 appendCategoryEntries(entries, runtime, category, focusGroup, registries, ids);
             }
         }
-        var json = GSON.toJson(entries);
-        var chunkCount = (json.length() + RecipeDumpChunkPayload.MAX_CHUNK_CHARS - 1)
-                / RecipeDumpChunkPayload.MAX_CHUNK_CHARS;
-        var total = Math.max(chunkCount, 1);
-        for (int index = 0; index < total; index++) {
-            var from = index * RecipeDumpChunkPayload.MAX_CHUNK_CHARS;
-            var to = Math.min(json.length(), from + RecipeDumpChunkPayload.MAX_CHUNK_CHARS);
-            sendChunk(requestId, index, total, runtime != null, json.substring(from, to));
-        }
+        return entries;
     }
 
     private static void sendChunk(

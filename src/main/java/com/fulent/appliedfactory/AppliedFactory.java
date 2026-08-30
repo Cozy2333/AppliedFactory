@@ -11,8 +11,10 @@ import com.fulent.appliedfactory.item.FactoryBusItem;
 import com.fulent.appliedfactory.menu.FactoryControllerProgramMenu;
 import com.fulent.appliedfactory.network.NetworkHandler;
 import com.fulent.appliedfactory.part.FactoryBusPart;
+import com.fulent.appliedfactory.script.ControllerProgramComponent;
 
 import appeng.api.AECapabilities;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTabs;
@@ -47,10 +49,15 @@ public final class AppliedFactory {
             .create(Registries.BLOCK_ENTITY_TYPE, MOD_ID);
     // 菜单注册器
     public static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, MOD_ID);
+    // 数据组件注册器
+    public static final DeferredRegister<DataComponentType<?>> DATA_COMPONENT_TYPES = DeferredRegister
+            .create(Registries.DATA_COMPONENT_TYPE, MOD_ID);
 
-    // 注册方块
+    // 注册方块：原石硬度，需要镐采集
     public static final DeferredBlock<Block> FACTORY_CONTROLLER = BLOCKS.register("factory_controller",
-            () -> new FactoryControllerBlock(BlockBehaviour.Properties.of().strength(2.5F)));
+            () -> new FactoryControllerBlock(BlockBehaviour.Properties.of()
+                    .strength(1.5F, 6.0F)
+                    .requiresCorrectToolForDrops()));
 // 方块物品
     public static final DeferredItem<BlockItem> FACTORY_CONTROLLER_ITEM = ITEMS
             .registerSimpleBlockItem("factory_controller", FACTORY_CONTROLLER);
@@ -66,11 +73,19 @@ public final class AppliedFactory {
     public static final DeferredHolder<MenuType<?>, MenuType<FactoryControllerProgramMenu>> FACTORY_CONTROLLER_PROGRAM_MENU = MENUS
             .register("factory_controller_program",
                     () -> IMenuTypeExtension.create(FactoryControllerProgramMenu::new));
+    // 控制器程序数据组件：掉落/放置时随物品携带内部程序
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<ControllerProgramComponent>> CONTROLLER_PROGRAM_COMPONENT =
+            DATA_COMPONENT_TYPES.register("controller_program",
+                    () -> DataComponentType.<ControllerProgramComponent>builder()
+                            .persistent(ControllerProgramComponent.CODEC)
+                            .networkSynchronized(ControllerProgramComponent.STREAM_CODEC)
+                            .build());
     public AppliedFactory(IEventBus modEventBus, ModContainer modContainer) {
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
         BLOCK_ENTITY_TYPES.register(modEventBus);
         MENUS.register(modEventBus);
+        DATA_COMPONENT_TYPES.register(modEventBus);
 
         modEventBus.addListener(this::addCreative);
         modEventBus.addListener(this::registerCapabilities);
@@ -79,8 +94,6 @@ public final class AppliedFactory {
         
         FactoryBusPart.registerModels();
 
-        NeoForge.EVENT_BUS.addListener(
-                com.fulent.appliedfactory.command.ExportCommand::register);
         McpProbeManager.register();
     }
 

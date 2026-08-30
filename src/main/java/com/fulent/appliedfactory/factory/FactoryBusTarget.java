@@ -514,6 +514,15 @@ public final class FactoryBusTarget {
                 actorDirection.getStepY() * 1.25D,
                 actorDirection.getStepZ() * 1.25D);
         player.setPos(actorPosition.x, actorPosition.y, actorPosition.z);
+        // BlockItem placement derives directional block states from the player
+        // rotation. Keep the fake player looking from the bus toward the target,
+        // otherwise place() uses the fake player's default south-facing yaw.
+        var lookDirection = actorDirection.getOpposite();
+        var yaw = lookDirection.toYRot();
+        player.setYRot(yaw);
+        player.setYHeadRot(yaw);
+        player.setYBodyRot(yaw);
+        player.setXRot(0.0F);
         return player;
     }
 

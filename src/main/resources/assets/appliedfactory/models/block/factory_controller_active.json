@@ -4,8 +4,8 @@
   "textures": {
     "particle": "appliedfactory:block/factory_controller_casing",
     "casing": "appliedfactory:block/factory_controller_casing",
-    "front": "appliedfactory:block/factory_controller_front",
-    "strip": "appliedfactory:block/factory_controller_strip"
+    "front": "appliedfactory:block/factory_controller_front_active",
+    "strip": "appliedfactory:block/factory_controller_strip_active"
   },
   "elements": [
     {

@@ -516,7 +516,7 @@ final class JsGlobals {
         for (long index = 0; index < array.getArraySize(); index++) {
             result.add(spec(JsValues.toHost(array.getArrayElement(index)), name));
         }
-        return FactoryResourceRef.normalize(result);
+        return List.copyOf(result);
     }
 
     /**

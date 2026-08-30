@@ -32,6 +32,14 @@ public final class ClientMachineIconsPayloadHandler {
     }
 
     private static void send(UUID requestId) {
+        var icons = buildIcons();
+        var runtime = FactoryJeiPlugin.runtime();
+        PacketDistributor.sendToServer(new MachineIconsPayload(
+                requestId, runtime != null, GSON.toJson(icons)));
+    }
+
+    /** Builds the JEI machine map without sending it over the network. */
+    public static JsonObject buildIcons() {
         var runtime = FactoryJeiPlugin.runtime();
         var icons = new JsonObject();
         if (runtime != null) {
@@ -55,7 +63,6 @@ public final class ClientMachineIconsPayloadHandler {
                 }
             }
         }
-        PacketDistributor.sendToServer(new MachineIconsPayload(
-                requestId, runtime != null, GSON.toJson(icons)));
+        return icons;
     }
 }

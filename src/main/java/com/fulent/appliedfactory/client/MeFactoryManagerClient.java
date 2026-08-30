@@ -14,6 +14,7 @@ import net.neoforged.neoforge.common.NeoForge;
 public final class MeFactoryManagerClient {
     public MeFactoryManagerClient(IEventBus modEventBus) {
         modEventBus.addListener(this::registerScreens);
+        NeoForge.EVENT_BUS.addListener(ClientWorkspaceCommand::register);
         NeoForge.EVENT_BUS.addListener(MeFactoryManagerClient::onLoggingOut);
     }
 

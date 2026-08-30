@@ -22,6 +22,7 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.phys.BlockHitResult;
@@ -31,10 +32,14 @@ public final class FactoryControllerBlock extends BaseEntityBlock {
     public static final MapCodec<FactoryControllerBlock> CODEC = simpleCodec(FactoryControllerBlock::new);
     /** Visual front; also the future basis for front/back/left/right network aliases. */
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
+    /** Drives the running/idle model swap; maintained by the block entity's server tick. */
+    public static final BooleanProperty ACTIVE = BooleanProperty.create("active");
 
     public FactoryControllerBlock(Properties properties) {
         super(properties);
-        registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH));
+        registerDefaultState(stateDefinition.any()
+                .setValue(FACING, Direction.NORTH)
+                .setValue(ACTIVE, Boolean.FALSE));
     }
 
     @Override
@@ -59,12 +64,13 @@ public final class FactoryControllerBlock extends BaseEntityBlock {
 
     @Override
     public BlockState mirror(BlockState state, Mirror mirror) {
-        return state.rotate(mirror.getRotation(state.getValue(FACING)));
+        var facing = state.getValue(FACING);
+        return state.setValue(FACING, mirror.getRotation(facing).rotate(facing));
     }
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<net.minecraft.world.level.block.Block, BlockState> builder) {
-        builder.add(FACING);
+        builder.add(FACING, ACTIVE);
     }
 
     @Override
