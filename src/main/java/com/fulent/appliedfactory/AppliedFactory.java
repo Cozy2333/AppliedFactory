@@ -16,9 +16,11 @@ import com.fulent.appliedfactory.script.ControllerProgramComponent;
 import appeng.api.AECapabilities;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -29,7 +31,6 @@ import net.neoforged.neoforge.common.extensions.IMenuTypeExtension;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.ModContainer;
-import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -52,6 +53,9 @@ public final class AppliedFactory {
     // 数据组件注册器
     public static final DeferredRegister<DataComponentType<?>> DATA_COMPONENT_TYPES = DeferredRegister
             .create(Registries.DATA_COMPONENT_TYPE, MOD_ID);
+    // 创造模式标签页注册器
+    public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister
+            .create(Registries.CREATIVE_MODE_TAB, MOD_ID);
 
     // 注册方块：原石硬度，需要镐采集
     public static final DeferredBlock<Block> FACTORY_CONTROLLER = BLOCKS.register("factory_controller",
@@ -64,6 +68,16 @@ public final class AppliedFactory {
 // 工厂总线物品
     public static final DeferredItem<FactoryBusItem> FACTORY_BUS_ITEM = ITEMS.register("factory_bus",
             () -> new FactoryBusItem(new Item.Properties()));
+// 独立创造物品页
+    public static final DeferredHolder<CreativeModeTab, CreativeModeTab> FACTORY_TAB = CREATIVE_MODE_TABS
+            .register("applied_factory", () -> CreativeModeTab.builder()
+                    .title(Component.translatable("itemGroup.appliedfactory"))
+                    .icon(() -> new ItemStack(FACTORY_CONTROLLER_ITEM.get()))
+                    .displayItems((parameters, output) -> {
+                        output.accept(FACTORY_CONTROLLER_ITEM);
+                        output.accept(FACTORY_BUS_ITEM);
+                    })
+                    .build());
 // 方块实体
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FactoryControllerBlockEntity>> FACTORY_CONTROLLER_BLOCK_ENTITY = BLOCK_ENTITY_TYPES
             .register("factory_controller", () -> BlockEntityType.Builder
@@ -86,8 +100,8 @@ public final class AppliedFactory {
         BLOCK_ENTITY_TYPES.register(modEventBus);
         MENUS.register(modEventBus);
         DATA_COMPONENT_TYPES.register(modEventBus);
+        CREATIVE_MODE_TABS.register(modEventBus);
 
-        modEventBus.addListener(this::addCreative);
         modEventBus.addListener(this::registerCapabilities);
         
         modEventBus.addListener(NetworkHandler::register);
@@ -100,12 +114,5 @@ public final class AppliedFactory {
     private void registerCapabilities(RegisterCapabilitiesEvent event) {
         event.registerBlockEntity(AECapabilities.IN_WORLD_GRID_NODE_HOST,
                 FACTORY_CONTROLLER_BLOCK_ENTITY.get(), (factory, context) -> factory);
-    }
-
-    private void addCreative(BuildCreativeModeTabContentsEvent event) {
-        if (event.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) {
-            event.accept(FACTORY_CONTROLLER_ITEM);
-            event.accept(FACTORY_BUS_ITEM);
-        }
     }
 }

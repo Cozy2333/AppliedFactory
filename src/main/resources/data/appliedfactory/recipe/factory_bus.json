@@ -1,0 +1,29 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "a": {
+      "item": "ae2:import_bus"
+    },
+    "b": {
+      "item": "ae2:pattern_provider"
+    },
+    "c": {
+      "item": "ae2:export_bus"
+    },
+    "d": {
+      "item": "ae2:crafting_card"
+    },
+    "e": {
+      "item": "ae2:redstone_card"
+    }
+  },
+  "pattern": [
+    "abc",
+    "ded"
+  ],
+  "result": {
+    "count": 1,
+    "id": "appliedfactory:factory_bus"
+  }
+}

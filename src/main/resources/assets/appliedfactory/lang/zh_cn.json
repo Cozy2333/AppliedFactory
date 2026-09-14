@@ -1,4 +1,5 @@
 {
+  "itemGroup.appliedfactory": "应用工厂",
   "block.appliedfactory.factory_controller": "工厂控制器",
   "item.appliedfactory.factory_bus": "工厂总线",
   "gui.appliedfactory.factory_bus.target": "机器：%s",

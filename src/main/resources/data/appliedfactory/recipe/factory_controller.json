@@ -1,0 +1,33 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "a": {
+      "item": "ae2:calculation_processor"
+    },
+    "b": {
+      "item": "ae2:engineering_processor"
+    },
+    "c": {
+      "tag": "appliedfactory:dense_cable"
+    },
+    "d": {
+      "item": "ae2:controller"
+    },
+    "e": {
+      "item": "ae2:crafting_accelerator"
+    },
+    "f": {
+      "item": "ae2:16k_crafting_storage"
+    }
+  },
+  "pattern": [
+    "aba",
+    "cdc",
+    "efe"
+  ],
+  "result": {
+    "count": 1,
+    "id": "appliedfactory:factory_controller"
+  }
+}
