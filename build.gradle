@@ -9,7 +9,13 @@ tasks.named('wrapper', Wrapper).configure {
     distributionType = Wrapper.DistributionType.BIN
 }
 
-version = mod_version
+// Release version resolution: an explicit MOD_VERSION environment variable
+// (injected by the release workflow from the git tag) wins, otherwise fall back
+// to the development version in gradle.properties. A leading "v" from tags such
+// as "v0.2.0" is stripped so the mod metadata stays semver-only.
+def releaseVersion = providers.environmentVariable('MOD_VERSION').getOrElse(mod_version).replaceFirst(/^[vV]/, '')
+
+version = releaseVersion
 group = mod_group_id
 
 sourceSets.main.resources {
@@ -130,7 +136,7 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
             mod_description        : mod_description,
             ae2_version            : ae2_version,
             graaljs_version        : graaljs_version,
-            mod_version            : mod_version,
+            mod_version            : releaseVersion,
     ]
     inputs.properties replaceProperties
     expand replaceProperties
