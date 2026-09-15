@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "moduleDetection": "force",
     "strict": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
