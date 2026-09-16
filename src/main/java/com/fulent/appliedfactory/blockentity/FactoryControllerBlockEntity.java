@@ -986,7 +986,7 @@ public final class FactoryControllerBlockEntity extends BlockEntity
             } else {
                 controller.recoverAllEscrows();
             }
-            // 同步运行/空闲外观状态（active 方块属性驱动模型切换）
+            // 同步网络在线/离线外观；下划线闪烁由客户端贴图动画完成。
             var active = controller.isActive();
             if (state.getValue(FactoryControllerBlock.ACTIVE) != active) {
                 level.setBlock(pos, state.setValue(FactoryControllerBlock.ACTIVE, active), 3);

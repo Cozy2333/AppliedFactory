@@ -17,12 +17,11 @@ import com.fulent.appliedfactory.network.RequestControllerProgramPayload;
 import com.fulent.appliedfactory.network.SaveControllerProgramPayload;
 import com.fulent.appliedfactory.network.SetControllerLogSubscriptionPayload;
 import com.fulent.appliedfactory.script.ControllerProgram;
+import com.fulent.appliedfactory.client.FactoryIconButton.Symbol;
 
 import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.MultiLineEditBox;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
@@ -35,29 +34,26 @@ public final class FactoryControllerProgramScreen
     private static final int MAX_WIDTH = 920;
     private static final int MAX_HEIGHT = 560;
     private static final int MARGIN = 10;
-    private static final int HEADER_HEIGHT = 28;
-    private static final int FILES_WIDTH = 190;
+    private static final int HEADER_HEIGHT = 36;
+    private static final int MAX_FILES_WIDTH = 190;
     private static final int FILE_ROW_HEIGHT = 19;
-    private static final int EDITOR_DECORATION_RIGHT = 10;
-    private static final int EDITOR_DECORATION_BOTTOM = 15;
+    private static final int FILES_FOOTER_HEIGHT = 30;
+    private static final int TOOLBAR_STEP = 21;
+    private static final int HEADER_ACTIONS = 6;
     private static final long AUTO_RELOAD_DEBOUNCE_MILLIS = 300L;
 
     private final List<Button> fileButtons = new ArrayList<>();
     private ScriptEditBox scriptBox;
-    private Button logButton;
-    private Button uploadButton;
-    private Button pullButton;
-    private Button mcpButton;
-    private Button autoReloadButton;
-    private Button exportWorkspaceButton;
-    private Button openFolderButton;
-    private Button openVscodeButton;
-    private Button newFileButton;
-    private Button deleteFileButton;
-    private Button renameFileButton;
-    private Button pageUpButton;
-    private Button pageDownButton;
-    private Button refreshFilesButton;
+    private FactoryIconButton logButton;
+    private FactoryIconButton uploadButton;
+    private FactoryIconButton pullButton;
+    private FactoryIconButton mcpButton;
+    private FactoryIconButton autoReloadButton;
+    private FactoryIconButton deleteFileButton;
+    private FactoryIconButton renameFileButton;
+    private FactoryIconButton pageUpButton;
+    private FactoryIconButton pageDownButton;
+    private int filesWidth;
     private List<WorkspaceEntry> workspaceEntries = List.of();
     private String selectedPath;
     private String remotePath = "";
@@ -74,7 +70,7 @@ public final class FactoryControllerProgramScreen
     private long autoReloadDueAt = -1L;
     private int filePage;
     private Component saveStatus = Component.empty();
-    private int saveStatusColor = 0xffa9d8e9;
+    private int saveStatusColor = FactoryGuiTheme.TEXT;
 
     public FactoryControllerProgramScreen(
             FactoryControllerProgramMenu menu, Inventory inventory, Component title) {
@@ -89,69 +85,84 @@ public final class FactoryControllerProgramScreen
         imageHeight = Math.min(MAX_HEIGHT, height - 20);
         super.init();
 
-        var editorX = leftPos + FILES_WIDTH + MARGIN * 2;
-        var editorY = topPos + HEADER_HEIGHT + MARGIN;
-        var editorAreaWidth = imageWidth - FILES_WIDTH - MARGIN * 3;
-        var editorAreaHeight = imageHeight - HEADER_HEIGHT - MARGIN * 2;
-        // MultiLineEditBox renders its scrollbar to the right of its bounds and
-        // its character count below them. Reserve both areas inside our panel.
-        var editorWidth = editorAreaWidth - EDITOR_DECORATION_RIGHT;
-        var editorHeight = editorAreaHeight - EDITOR_DECORATION_BOTTOM;
+        filesWidth = Math.min(MAX_FILES_WIDTH, Math.max(156, imageWidth / 4 + 10));
+        var editorX = leftPos + filesWidth + MARGIN * 2;
+        var editorY = topPos + HEADER_HEIGHT;
+        var editorWidth = imageWidth - filesWidth - MARGIN * 3;
+        var editorHeight = imageHeight - HEADER_HEIGHT - MARGIN;
         scriptBox = new ScriptEditBox(
                 font, editorX, editorY, editorWidth, editorHeight,
-                Component.translatable("gui.appliedfactory.script"),
-                Component.literal(ControllerProgram.DEFAULT_SOURCE));
+                Component.empty(), Component.translatable("gui.appliedfactory.script"));
         scriptBox.setCharacterLimit(ControllerProgram.MAX_SOURCE_LENGTH);
         scriptBox.setValue(currentSource);
         scriptBox.setEditable(selectedPath != null);
         addRenderableWidget(scriptBox);
 
-        uploadButton = addRenderableWidget(Button.builder(
-                Component.literal("↑"),
-                ignored -> uploadProgram())
-                .tooltip(Tooltip.create(Component.translatable(
-                        "gui.appliedfactory.upload_precompiled")))
-                .bounds(leftPos + imageWidth - 25, topPos + 5, 19, 18).build());
-        mcpButton = addRenderableWidget(Button.builder(
-                Component.literal("M"), ignored -> onMcpButton())
-                .tooltip(Tooltip.create(Component.translatable("gui.appliedfactory.bind_mcp")))
-                .bounds(leftPos + imageWidth - 46, topPos + 5, 19, 18).build());
-        pullButton = addRenderableWidget(Button.builder(
-                Component.literal("↓"),
-                ignored -> pullRemoteProgram())
-                .tooltip(Tooltip.create(Component.translatable("gui.appliedfactory.pull_local")))
-                .bounds(leftPos + imageWidth - 67, topPos + 5, 19, 18).build());
-        logButton = addRenderableWidget(Button.builder(
-                Component.literal(logSubscribed ? "●" : "○"), ignored -> toggleLogSubscription())
-                .bounds(leftPos + imageWidth - 88, topPos + 5, 19, 18).build());
-        autoReloadButton = addRenderableWidget(Button.builder(
-                Component.literal("↻"), ignored -> toggleAutoReload())
-                .bounds(leftPos + imageWidth - 109, topPos + 5, 19, 18).build());
+        var toolsX = headerActionsX();
+        var toolsY = topPos + 8;
+        addTool(toolsX, toolsY, Symbol.WORKSPACE, "gui.appliedfactory.export_workspace_tooltip",
+                ignored -> exportWorkspace());
+        autoReloadButton = addTool(toolsX + TOOLBAR_STEP, toolsY, Symbol.REFRESH,
+                "gui.appliedfactory.enable_auto_reload", ignored -> toggleAutoReload());
+        logButton = addTool(toolsX + TOOLBAR_STEP * 2, toolsY, Symbol.LOG,
+                "gui.appliedfactory.subscribe_logs", ignored -> toggleLogSubscription());
+        mcpButton = addTool(toolsX + TOOLBAR_STEP * 3, toolsY, Symbol.LINK,
+                "gui.appliedfactory.bind_mcp", ignored -> onMcpButton());
+        pullButton = addTool(toolsX + TOOLBAR_STEP * 4, toolsY, Symbol.DOWNLOAD,
+                "gui.appliedfactory.pull_local", ignored -> pullRemoteProgram());
+        uploadButton = addTool(toolsX + TOOLBAR_STEP * 5, toolsY, Symbol.UPLOAD,
+                "gui.appliedfactory.upload_precompiled", ignored -> uploadProgram());
         updateLogButton();
         updateAutoReloadButton();
-
-        exportWorkspaceButton = addRenderableWidget(Button.builder(
-                Component.literal("W"), ignored -> exportWorkspace())
-                .tooltip(Tooltip.create(Component.translatable(
-                        "gui.appliedfactory.export_workspace_tooltip")))
-                .bounds(leftPos + imageWidth - 130, topPos + 5, 19, 18).build());
-        openVscodeButton = addRenderableWidget(Button.builder(
-                Component.literal("V"), ignored -> openWorkspaceWith(true))
-                .tooltip(Tooltip.create(Component.translatable(
-                        "gui.appliedfactory.open_vscode_tooltip")))
-                .bounds(leftPos + imageWidth - 151, topPos + 5, 19, 18).build());
-        openFolderButton = addRenderableWidget(Button.builder(
-                Component.literal("F"), ignored -> openWorkspaceWith(false))
-                .tooltip(Tooltip.create(Component.translatable(
-                        "gui.appliedfactory.open_folder_tooltip")))
-                .bounds(leftPos + imageWidth - 172, topPos + 5, 19, 18).build());
-
+        initFileTools();
         reloadWorkspaceFiles();
         if (!sourceLoaded) {
             PacketDistributor.sendToServer(new RequestControllerProgramPayload(menu.getBlockPos()));
-            setStatus("gui.appliedfactory.loading_program", 0xffffd37a);
+            setStatus("gui.appliedfactory.loading_program", FactoryGuiTheme.WARNING);
         }
         updateButtonStates();
+    }
+
+    private int headerActionsX() {
+        return leftPos + imageWidth - MARGIN - FactoryIconButton.WIDTH - (HEADER_ACTIONS - 1) * TOOLBAR_STEP;
+    }
+
+    private int fileFooterTop() {
+        return topPos + imageHeight - MARGIN - FILES_FOOTER_HEIGHT;
+    }
+
+    private FactoryIconButton addTool(int x, int y, Symbol symbol, String tooltipKey, Button.OnPress onPress) {
+        return addRenderableWidget(new FactoryIconButton(x, y, symbol, tooltipKey, onPress));
+    }
+
+    private void initFileTools() {
+        var x = leftPos + MARGIN + 6;
+        var y = fileFooterTop() + 6;
+        addTool(x, y, Symbol.NEW, "gui.appliedfactory.file_new", ignored -> createFile());
+        deleteFileButton = addTool(x + TOOLBAR_STEP, y, Symbol.DELETE,
+                "gui.appliedfactory.file_delete", ignored -> deleteFile());
+        renameFileButton = addTool(x + TOOLBAR_STEP * 2, y, Symbol.RENAME,
+                "gui.appliedfactory.file_rename", ignored -> renameFile());
+        addTool(x + TOOLBAR_STEP * 3, y, Symbol.REFRESH,
+                "gui.appliedfactory.refresh_files", ignored -> reloadWorkspaceFiles());
+        addTool(x + TOOLBAR_STEP * 4, y, Symbol.FOLDER,
+                "gui.appliedfactory.open_folder_tooltip", ignored -> openWorkspaceWith(false));
+        addTool(x + TOOLBAR_STEP * 5, y, Symbol.CODE,
+                "gui.appliedfactory.open_vscode_tooltip", ignored -> openWorkspaceWith(true));
+        var pageX = leftPos + MARGIN + filesWidth - 16;
+        pageUpButton = addRenderableWidget(new FactoryIconButton(pageX, y, 10, 10,
+                Symbol.PAGE_UP, "gui.appliedfactory.file_page_up", ignored -> changeFilePage(-1)));
+        pageDownButton = addRenderableWidget(new FactoryIconButton(pageX, y + 10, 10, 10,
+                Symbol.PAGE_DOWN, "gui.appliedfactory.file_page_down", ignored -> changeFilePage(1)));
+    }
+
+    private void changeFilePage(int delta) {
+        var lastPage = Math.max(0, (workspaceEntries.size() - 1) / rowsPerPage());
+        var nextPage = Math.max(0, Math.min(lastPage, filePage + delta));
+        if (nextPage != filePage) {
+            filePage = nextPage;
+            rebuildFileButtons();
+        }
     }
 
     private void reloadWorkspaceFiles() {
@@ -169,7 +180,7 @@ public final class FactoryControllerProgramScreen
             filePage = Math.min(filePage, pages - 1);
             rebuildFileButtons();
         } catch (IOException exception) {
-            setLiteralStatus("Unable to list appliedscripts: " + exception.getMessage(), 0xffff7d7d);
+            setLiteralStatus("Unable to list appliedscripts: " + exception.getMessage(), FactoryGuiTheme.ERROR);
         }
     }
 
@@ -180,73 +191,29 @@ public final class FactoryControllerProgramScreen
         var last = Math.min(workspaceEntries.size(), first + rowsPerPage());
         for (int index = first; index < last; index++) {
             var entry = workspaceEntries.get(index);
-            var labelWidth = FILES_WIDTH - 20;
-            var label = font.plainSubstrByWidth(entry.path(), labelWidth);
+            var label = Component.literal(entry.path());
             if (entry.remote()) {
-                var suffix = Component.translatable(
-                        "gui.appliedfactory.remote_file_suffix").getString();
-                label = font.plainSubstrByWidth(
-                        entry.path(), Math.max(0, labelWidth - font.width(suffix))) + suffix;
+                label.append(Component.translatable("gui.appliedfactory.remote_file_suffix"));
             }
-            var button = Button.builder(Component.literal(label), ignored -> selectEntry(entry))
-                    .bounds(leftPos + MARGIN, topPos + HEADER_HEIGHT + MARGIN
-                            + (index - first) * FILE_ROW_HEIGHT,
-                            FILES_WIDTH - MARGIN, 18).build();
+            var button = new FactoryFileRowButton(leftPos + MARGIN + 2,
+                    topPos + HEADER_HEIGHT + 4 + (index - first) * FILE_ROW_HEIGHT,
+                    filesWidth - 4, FILE_ROW_HEIGHT, label,
+                    () -> entry.remote() ? selectedPath == null && entry.path().equals(remotePath)
+                            : entry.path().equals(selectedPath),
+                    ignored -> selectEntry(entry));
             fileButtons.add(addRenderableWidget(button));
         }
-        var navY = topPos + imageHeight - 25;
-        var navLeft = leftPos + MARGIN;
-        var navWidth = (FILES_WIDTH - MARGIN * 2 - 5 * 2) / 6;
-        int slot = 0;
-        newFileButton = addRenderableWidget(Button.builder(
-                Component.literal("+"), ignored -> createFile())
-                .tooltip(Tooltip.create(Component.translatable("gui.appliedfactory.file_new")))
-                .bounds(navLeft + slot++ * (navWidth + 2), navY, navWidth, 18).build());
-        deleteFileButton = addRenderableWidget(Button.builder(
-                Component.literal("×"), ignored -> deleteFile())
-                .tooltip(Tooltip.create(Component.translatable("gui.appliedfactory.file_delete")))
-                .bounds(navLeft + slot++ * (navWidth + 2), navY, navWidth, 18).build());
-        renameFileButton = addRenderableWidget(Button.builder(
-                Component.literal("✎"), ignored -> renameFile())
-                .tooltip(Tooltip.create(Component.translatable("gui.appliedfactory.file_rename")))
-                .bounds(navLeft + slot++ * (navWidth + 2), navY, navWidth, 18).build());
-        pageUpButton = addRenderableWidget(Button.builder(
-                Component.literal("▲"), ignored -> {
-                    if (filePage > 0) {
-                        filePage--;
-                        rebuildFileButtons();
-                    }
-                }).tooltip(Tooltip.create(Component.translatable("gui.appliedfactory.file_page_up")))
-                .bounds(navLeft + slot++ * (navWidth + 2), navY, navWidth, 18).build());
-        pageDownButton = addRenderableWidget(Button.builder(
-                Component.literal("▼"), ignored -> {
-                    if ((filePage + 1) * rowsPerPage() < workspaceEntries.size()) {
-                        filePage++;
-                        rebuildFileButtons();
-                    }
-                }).tooltip(Tooltip.create(Component.translatable("gui.appliedfactory.file_page_down")))
-                .bounds(navLeft + slot++ * (navWidth + 2), navY, navWidth, 18).build());
-        refreshFilesButton = addRenderableWidget(Button.builder(
-                Component.literal("⟳"), ignored -> reloadWorkspaceFiles())
-                .tooltip(Tooltip.create(Component.translatable("gui.appliedfactory.refresh_files")))
-                .bounds(navLeft + slot * (navWidth + 2), navY, navWidth, 18).build());
-        fileButtons.add(newFileButton);
-        fileButtons.add(deleteFileButton);
-        fileButtons.add(renameFileButton);
-        fileButtons.add(pageUpButton);
-        fileButtons.add(pageDownButton);
-        fileButtons.add(refreshFilesButton);
         updateButtonStates();
     }
 
     private int rowsPerPage() {
-        return Math.max(1, (imageHeight - HEADER_HEIGHT - MARGIN - 25) / FILE_ROW_HEIGHT);
+        return Math.max(1, (fileFooterTop() - topPos - HEADER_HEIGHT - 8) / FILE_ROW_HEIGHT);
     }
 
     private void selectEntry(WorkspaceEntry entry) {
         if (entry.remote()) {
             showRemoteSource();
-            setStatus("gui.appliedfactory.remote_snapshot", 0xffffd37a);
+            setStatus("gui.appliedfactory.remote_snapshot", FactoryGuiTheme.WARNING);
         } else {
             selectFile(entry.path());
         }
@@ -256,23 +223,23 @@ public final class FactoryControllerProgramScreen
         try {
             var source = ScriptWorkspaceFiles.read(path);
             if (!ControllerProgram.isWithinLimit(source)) {
-                setStatus("gui.appliedfactory.local_source_too_long", 0xffff7d7d);
+                setStatus("gui.appliedfactory.local_source_too_long", FactoryGuiTheme.ERROR);
                 return;
             }
             selectedPath = path;
             scriptBox.setValue(source);
             scriptBox.setEditable(true);
             armFileWatcher(path);
-            setLiteralStatus("", 0xffa9d8e9);
+            setLiteralStatus("", FactoryGuiTheme.TEXT);
             updateButtonStates();
         } catch (IOException | IllegalArgumentException exception) {
-            setLiteralStatus("Unable to read " + path + ": " + exception.getMessage(), 0xffff7d7d);
+            setLiteralStatus("Unable to read " + path + ": " + exception.getMessage(), FactoryGuiTheme.ERROR);
         }
     }
 
     private void uploadProgram() {
         if (selectedPath == null) {
-            setStatus("gui.appliedfactory.local_backup_required", 0xffff7d7d);
+            setStatus("gui.appliedfactory.local_backup_required", FactoryGuiTheme.ERROR);
             return;
         }
         uploadProgram(selectedPath, scriptBox.getValue(), true);
@@ -293,19 +260,19 @@ public final class FactoryControllerProgramScreen
             }
             compiled = ScriptBundler.bundle(source, ScriptWorkspaceFiles.absolute(path).getParent());
         } catch (IOException | IllegalArgumentException | McpToolException exception) {
-            setLiteralStatus("Precompile failed: " + exception.getMessage(), 0xffff7d7d);
+            setLiteralStatus("Precompile failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
             return;
         }
         if (!ControllerProgram.isWithinLimit(source)
                 || !ControllerProgram.isWithinLimit(compiled)) {
-            setStatus("gui.appliedfactory.source_too_long", 0xffff7d7d,
+            setStatus("gui.appliedfactory.source_too_long", FactoryGuiTheme.ERROR,
                     ControllerProgram.MAX_SOURCE_LENGTH);
             return;
         }
         uploadPending = true;
         pendingUploadSource = source;
         pendingUploadPath = path;
-        setStatus("gui.appliedfactory.saving", 0xffffd37a);
+        setStatus("gui.appliedfactory.saving", FactoryGuiTheme.WARNING);
         PacketDistributor.sendToServer(new SaveControllerProgramPayload(
                 menu.getBlockPos(), source, compiled, path));
         updateButtonStates();
@@ -332,7 +299,7 @@ public final class FactoryControllerProgramScreen
                     ? remotePath : ScriptWorkspaceFiles.availableDownloadPath(remotePath);
             writeRemoteFile(path);
         } catch (IOException | IllegalArgumentException exception) {
-            setLiteralStatus("Pull failed: " + exception.getMessage(), 0xffff7d7d);
+            setLiteralStatus("Pull failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
         }
     }
 
@@ -347,10 +314,10 @@ public final class FactoryControllerProgramScreen
             scriptBox.setEditable(true);
             armFileWatcher(path);
             reloadWorkspaceFiles();
-            setStatus("gui.appliedfactory.pull_success", 0xff8fe3a1);
+            setStatus("gui.appliedfactory.pull_success", FactoryGuiTheme.SUCCESS);
             updateButtonStates();
         } catch (IOException | IllegalArgumentException exception) {
-            setLiteralStatus("Pull failed: " + exception.getMessage(), 0xffff7d7d);
+            setLiteralStatus("Pull failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
         }
     }
 
@@ -358,9 +325,9 @@ public final class FactoryControllerProgramScreen
         var ok = ClientWorkspaceBuilder.build();
         reloadWorkspaceFiles();
         if (ok) {
-            setStatus("gui.appliedfactory.export_workspace_done", 0xff8fe3a1);
+            setStatus("gui.appliedfactory.export_workspace_done", FactoryGuiTheme.SUCCESS);
         } else {
-            setStatus("gui.appliedfactory.export_workspace_failed", 0xffff7d7d);
+            setStatus("gui.appliedfactory.export_workspace_failed", FactoryGuiTheme.ERROR);
         }
     }
 
@@ -383,9 +350,9 @@ public final class FactoryControllerProgramScreen
             new ProcessBuilder(command).start();
             setStatus(vscode
                     ? "gui.appliedfactory.opened_vscode"
-                    : "gui.appliedfactory.opened_folder", 0xffa9d8e9);
+                    : "gui.appliedfactory.opened_folder", FactoryGuiTheme.TEXT);
         } catch (IOException | RuntimeException exception) {
-            setLiteralStatus("Open failed: " + exception.getMessage(), 0xffff7d7d);
+            setLiteralStatus("Open failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
         }
     }
 
@@ -394,27 +361,27 @@ public final class FactoryControllerProgramScreen
                 name -> {
                     var path = normalizeNewFilePath(name);
                     if (path == null) {
-                        setStatus("gui.appliedfactory.invalid_file_name", 0xffff7d7d);
+                        setStatus("gui.appliedfactory.invalid_file_name", FactoryGuiTheme.ERROR);
                         return;
                     }
                     try {
                         if (ScriptWorkspaceFiles.exists(path)) {
-                            setStatus("gui.appliedfactory.file_exists", 0xffff7d7d, path);
+                            setStatus("gui.appliedfactory.file_exists", FactoryGuiTheme.ERROR, path);
                             return;
                         }
                         ScriptWorkspaceFiles.write(path, "");
                         reloadWorkspaceFiles();
                         selectFile(path);
-                        setStatus("gui.appliedfactory.file_created", 0xff8fe3a1, path);
+                        setStatus("gui.appliedfactory.file_created", FactoryGuiTheme.SUCCESS, path);
                     } catch (IOException | IllegalArgumentException exception) {
-                        setLiteralStatus("Create failed: " + exception.getMessage(), 0xffff7d7d);
+                        setLiteralStatus("Create failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
                     }
                 });
     }
 
     private void deleteFile() {
         if (selectedPath == null) {
-            setStatus("gui.appliedfactory.no_local_file", 0xffff7d7d);
+            setStatus("gui.appliedfactory.no_local_file", FactoryGuiTheme.ERROR);
             return;
         }
         var path = selectedPath;
@@ -433,9 +400,9 @@ public final class FactoryControllerProgramScreen
                 }
                 reloadWorkspaceFiles();
                 updateButtonStates();
-                setStatus("gui.appliedfactory.file_deleted", 0xff8fe3a1, path);
+                setStatus("gui.appliedfactory.file_deleted", FactoryGuiTheme.SUCCESS, path);
             } catch (IOException | IllegalArgumentException exception) {
-                setLiteralStatus("Delete failed: " + exception.getMessage(), 0xffff7d7d);
+                setLiteralStatus("Delete failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
             }
         }, Component.translatable("gui.appliedfactory.confirm_delete_title"),
                 Component.translatable("gui.appliedfactory.confirm_delete", path)));
@@ -443,7 +410,7 @@ public final class FactoryControllerProgramScreen
 
     private void renameFile() {
         if (selectedPath == null) {
-            setStatus("gui.appliedfactory.no_local_file", 0xffff7d7d);
+            setStatus("gui.appliedfactory.no_local_file", FactoryGuiTheme.ERROR);
             return;
         }
         var oldPath = selectedPath;
@@ -451,7 +418,7 @@ public final class FactoryControllerProgramScreen
                 "gui.appliedfactory.file_rename", oldPath, name -> {
                     var path = normalizeNewFilePath(name);
                     if (path == null) {
-                        setStatus("gui.appliedfactory.invalid_file_name", 0xffff7d7d);
+                        setStatus("gui.appliedfactory.invalid_file_name", FactoryGuiTheme.ERROR);
                         return;
                     }
                     if (path.equals(oldPath)) {
@@ -459,16 +426,16 @@ public final class FactoryControllerProgramScreen
                     }
                     try {
                         if (ScriptWorkspaceFiles.exists(path)) {
-                            setStatus("gui.appliedfactory.file_exists", 0xffff7d7d, path);
+                            setStatus("gui.appliedfactory.file_exists", FactoryGuiTheme.ERROR, path);
                             return;
                         }
                         ScriptWorkspaceFiles.rename(oldPath, path);
                         selectedPath = path;
                         reloadWorkspaceFiles();
                         armFileWatcher(path);
-                        setStatus("gui.appliedfactory.file_renamed", 0xff8fe3a1, path);
+                        setStatus("gui.appliedfactory.file_renamed", FactoryGuiTheme.SUCCESS, path);
                     } catch (IOException | IllegalArgumentException exception) {
-                        setLiteralStatus("Rename failed: " + exception.getMessage(), 0xffff7d7d);
+                        setLiteralStatus("Rename failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
                     }
                 });
     }
@@ -528,10 +495,10 @@ public final class FactoryControllerProgramScreen
         if (logButton == null) {
             return;
         }
-        logButton.setMessage(Component.literal(logSubscribed ? "●" : "○"));
-        logButton.setTooltip(Tooltip.create(Component.translatable(logSubscribed
+        logButton.setSelected(logSubscribed);
+        logButton.setActionLabel(logSubscribed
                 ? "gui.appliedfactory.unsubscribe_logs"
-                : "gui.appliedfactory.subscribe_logs")));
+                : "gui.appliedfactory.subscribe_logs");
     }
 
     public void showSaveResult(ControllerProgramSaveResultPayload payload) {
@@ -543,9 +510,9 @@ public final class FactoryControllerProgramScreen
             remoteSource = pendingUploadSource;
             remotePath = pendingUploadPath;
             remoteUpdatedAt = payload.updatedAt();
-            setStatus("gui.appliedfactory.save_success", 0xff8fe3a1);
+            setStatus("gui.appliedfactory.save_success", FactoryGuiTheme.SUCCESS);
         } else {
-            setStatus("gui.appliedfactory.syntax_error", 0xffff7d7d, payload.message());
+            setStatus("gui.appliedfactory.syntax_error", FactoryGuiTheme.ERROR, payload.message());
         }
         pendingUploadSource = null;
         pendingUploadPath = null;
@@ -571,13 +538,13 @@ public final class FactoryControllerProgramScreen
                 var localSource = ScriptWorkspaceFiles.read(remotePath);
                 if (localSource.equals(remoteSource)) {
                     selectFile(remotePath);
-                    setStatus("gui.appliedfactory.local_file_matched", 0xffa9d8e9);
+                    setStatus("gui.appliedfactory.local_file_matched", FactoryGuiTheme.TEXT);
                 } else if (ScriptWorkspaceFiles.lastModifiedMillis(remotePath) > remoteUpdatedAt) {
                     selectFile(remotePath);
-                    setStatus("gui.appliedfactory.local_file_newer", 0xffffd37a);
+                    setStatus("gui.appliedfactory.local_file_newer", FactoryGuiTheme.WARNING);
                 } else {
                     showRemoteSource();
-                    setStatus("gui.appliedfactory.remote_file_newer", 0xffffd37a);
+                    setStatus("gui.appliedfactory.remote_file_newer", FactoryGuiTheme.WARNING);
                 }
                 reloadWorkspaceFiles();
                 updateButtonStates();
@@ -587,12 +554,15 @@ public final class FactoryControllerProgramScreen
             // Fall through to the unbacked remote view.
         }
         showRemoteSource();
-        setStatus("gui.appliedfactory.remote_unbacked", 0xffa9d8e9);
+        setStatus("gui.appliedfactory.remote_unbacked", FactoryGuiTheme.TEXT);
         reloadWorkspaceFiles();
         updateButtonStates();
     }
 
     private void updateButtonStates() {
+        if (scriptBox != null) {
+            scriptBox.setEditable(selectedPath != null);
+        }
         if (uploadButton != null) {
             uploadButton.active = sourceLoaded && selectedPath != null && !uploadPending;
         }
@@ -640,16 +610,10 @@ public final class FactoryControllerProgramScreen
     @Override
     public boolean mouseScrolled(
             double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (mouseX >= leftPos + MARGIN && mouseX < leftPos + FILES_WIDTH
+        if (mouseX >= leftPos + MARGIN && mouseX < leftPos + MARGIN + filesWidth
                 && mouseY >= topPos + HEADER_HEIGHT
-                && mouseY < topPos + imageHeight) {
-            var nextPage = filePage + (verticalAmount > 0 ? -1 : verticalAmount < 0 ? 1 : 0);
-            var lastPage = Math.max(0, (workspaceEntries.size() - 1) / rowsPerPage());
-            nextPage = Math.max(0, Math.min(lastPage, nextPage));
-            if (nextPage != filePage) {
-                filePage = nextPage;
-                rebuildFileButtons();
-            }
+                && mouseY < fileFooterTop()) {
+            changeFilePage(verticalAmount > 0 ? -1 : verticalAmount < 0 ? 1 : 0);
             return true;
         }
         if (scriptBox.isMouseOver(mouseX, mouseY)
@@ -662,39 +626,43 @@ public final class FactoryControllerProgramScreen
     @Override
     protected void containerTick() {
         super.containerTick();
-        mcpButton.setTooltip(Tooltip.create(Component.translatable(
-                boundHere() ? "gui.appliedfactory.unbind_mcp" : "gui.appliedfactory.bind_mcp")));
+        mcpButton.setSelected(boundHere());
+        mcpButton.setActionLabel(boundHere() ? "gui.appliedfactory.unbind_mcp" : "gui.appliedfactory.bind_mcp");
         pollAutoReload();
     }
 
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
-        drawPanel(graphics, leftPos, topPos, imageWidth, imageHeight, 0xff17232e, 0xff5d95ad);
-        drawPanel(graphics, leftPos + 4, topPos + 4, imageWidth - 8, HEADER_HEIGHT - 4,
-                0xff263b49, 0xff72b6d1);
-        drawPanel(graphics, leftPos + MARGIN - 2, topPos + HEADER_HEIGHT + MARGIN - 2,
-                FILES_WIDTH - MARGIN + 4, imageHeight - HEADER_HEIGHT - MARGIN * 2 + 4,
-                0xff0e171e, 0xff3f6d81);
-        drawPanel(graphics, leftPos + FILES_WIDTH + MARGIN * 2 - 2,
-                topPos + HEADER_HEIGHT + MARGIN - 2,
-                imageWidth - FILES_WIDTH - MARGIN * 3 + 4,
-                imageHeight - HEADER_HEIGHT - MARGIN * 2 + 4,
-                0xff0e171e, 0xff3f6d81);
-    }
-
-    private static void drawPanel(
-            GuiGraphics graphics, int x, int y, int width, int height, int fill, int border) {
-        graphics.fill(x, y, x + width, y + height, border);
-        graphics.fill(x + 1, y + 1, x + width - 1, y + height - 1, fill);
+        FactoryGuiTheme.window(graphics, leftPos, topPos, imageWidth, imageHeight);
+        FactoryGuiTheme.panel(graphics, leftPos + MARGIN, topPos + HEADER_HEIGHT,
+                filesWidth, imageHeight - HEADER_HEIGHT - MARGIN,
+                FactoryGuiTheme.BORDER, FactoryGuiTheme.FILES, 1);
+        graphics.fill(leftPos + MARGIN + 6, fileFooterTop(), leftPos + MARGIN + filesWidth - 6,
+                fileFooterTop() + 1, FactoryGuiTheme.BORDER);
     }
 
     @Override
     protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
-        var fileName = currentFileName();
-        var status = saveStatus.getString();
-        var caption = status.isEmpty() ? fileName : fileName + ":" + status;
-        graphics.drawString(font, font.plainSubstrByWidth(caption, imageWidth - 192),
-                10, 10, saveStatusColor);
+        var captionWidth = Math.max(0, headerActionsX() - leftPos - MARGIN - 8);
+        graphics.drawString(font, font.plainSubstrByWidth("Applied Factory / " + currentFileName(), captionWidth),
+                MARGIN, 8, FactoryGuiTheme.TEXT, false);
+        if (!saveStatus.getString().isEmpty()) {
+            graphics.drawString(font, font.plainSubstrByWidth(saveStatus.getString(), captionWidth),
+                    MARGIN, 22, saveStatusColor, false);
+        }
+    }
+
+    @Override
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.render(graphics, mouseX, mouseY, partialTick);
+        if (mouseX >= leftPos + MARGIN && mouseX < headerActionsX() - 8
+                && mouseY >= topPos + 6 && mouseY < topPos + HEADER_HEIGHT - 2) {
+            var tooltip = mouseY >= topPos + 20 && !saveStatus.getString().isEmpty()
+                    ? saveStatus : Component.literal(selectedPath == null ? remotePath : selectedPath);
+            if (!tooltip.getString().isEmpty()) {
+                graphics.renderTooltip(font, tooltip, mouseX, mouseY);
+            }
+        }
     }
 
     private String currentFileName() {
@@ -736,7 +704,7 @@ public final class FactoryControllerProgramScreen
         }
         setStatus(autoReload
                 ? "gui.appliedfactory.auto_reload_enabled"
-                : "gui.appliedfactory.auto_reload_disabled", 0xffa9d8e9);
+                : "gui.appliedfactory.auto_reload_disabled", FactoryGuiTheme.TEXT);
         updateAutoReloadButton();
     }
 
@@ -744,10 +712,10 @@ public final class FactoryControllerProgramScreen
         if (autoReloadButton == null) {
             return;
         }
-        autoReloadButton.setMessage(Component.literal(autoReload ? "⟳" : "↻"));
-        autoReloadButton.setTooltip(Tooltip.create(Component.translatable(autoReload
+        autoReloadButton.setSelected(autoReload);
+        autoReloadButton.setActionLabel(autoReload
                 ? "gui.appliedfactory.disable_auto_reload"
-                : "gui.appliedfactory.enable_auto_reload")));
+                : "gui.appliedfactory.enable_auto_reload");
     }
 
     private void armFileWatcher(String path) {
@@ -784,7 +752,7 @@ public final class FactoryControllerProgramScreen
             uploadProgram(selectedPath, source, false);
         } catch (IOException | IllegalArgumentException exception) {
             autoReloadDueAt = -1L;
-            setLiteralStatus("Auto reload failed: " + exception.getMessage(), 0xffff7d7d);
+            setLiteralStatus("Auto reload failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
         }
     }
 

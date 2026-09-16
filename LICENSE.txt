@@ -1,3 +1,9 @@
+Artwork exception: the AE2-derived controller textures are licensed under
+CC BY-NC-SA 3.0, not MIT. See
+src/main/resources/META-INF/APPLIED_FACTORY_ARTWORK.md for attribution,
+the affected files, and the artwork license links. This notice is also
+included in the mod jar at META-INF/APPLIED_FACTORY_ARTWORK.md.
+
 MIT License
 
 Copyright (c) 2023 NeoForged project

@@ -32,7 +32,7 @@ public final class FactoryControllerBlock extends BaseEntityBlock {
     public static final MapCodec<FactoryControllerBlock> CODEC = simpleCodec(FactoryControllerBlock::new);
     /** Visual front; also the future basis for front/back/left/right network aliases. */
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
-    /** Drives the running/idle model swap; maintained by the block entity's server tick. */
+    /** Network-online model state; the blinking cursor is animated entirely by its texture. */
     public static final BooleanProperty ACTIVE = BooleanProperty.create("active");
 
     public FactoryControllerBlock(Properties properties) {
