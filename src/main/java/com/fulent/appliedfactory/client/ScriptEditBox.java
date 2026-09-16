@@ -9,6 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.MultiLineEditBox;
+import net.minecraft.client.gui.components.Whence;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
@@ -24,31 +25,74 @@ final class ScriptEditBox extends MultiLineEditBox {
     private static final int SCROLLBAR_WIDTH = 8;
     // Vanilla's multiline layout and cursor seeking both use a 9px line advance.
     private static final int LINE_HEIGHT = 9;
+    // Breathing room on either side of the right-aligned line numbers.
+    private static final int GUTTER_PADDING = 4;
+    // Below this width the gutter is dropped so code keeps usable space.
+    private static final int GUTTER_MIN_PANEL_WIDTH = 200;
     private static final ResourceLocation SCROLLER = ResourceLocation.fromNamespaceAndPath("ae2", "small_scroller");
 
     private final Font editorFont;
-    private final int gutterWidth;
+    private final int panelX;
+    private final int panelWidth;
     private final List<Integer> lineNumbers = new ArrayList<>();
+    private int gutterWidth;
     private int characterLimit = Integer.MAX_VALUE;
     private boolean editable = true;
+    private boolean adjustingGutter;
 
     ScriptEditBox(Font font, int x, int y, int width, int height,
             Component placeholder, Component message) {
         // The inherited content bounds exclude our gutter and scrollbar. This
         // keeps vanilla's cursor seeking, wrapping, selection and scroll dragging
         // aligned with what is drawn, without reserving a bottom status row.
-        super(font, x + BORDER + gutterWidth(width), y + BORDER,
-                width - BORDER * 2 - gutterWidth(width) - SCROLLBAR_WIDTH,
+        super(font, x + BORDER + initialGutter(width, font), y + BORDER,
+                width - BORDER * 2 - initialGutter(width, font) - SCROLLBAR_WIDTH,
                 height - BORDER * 2, placeholder, message);
         editorFont = font;
-        gutterWidth = gutterWidth(width);
-        super.setValueListener(this::rebuildLineNumbers);
-        rebuildLineNumbers(getValue());
+        panelX = x;
+        panelWidth = width;
+        gutterWidth = initialGutter(width, font);
+        super.setValueListener(this::onValueChanged);
+        onValueChanged(getValue());
     }
 
-    private static int gutterWidth(int panelWidth) {
+    private static int initialGutter(int panelWidth, Font font) {
         // Prioritize usable code width at small GUI resolutions.
-        return panelWidth >= 200 ? 38 : 0;
+        return panelWidth >= GUTTER_MIN_PANEL_WIDTH ? GUTTER_PADDING * 2 + font.width("0") : 0;
+    }
+
+    private void onValueChanged(String value) {
+        if (adjustingGutter) {
+            return;
+        }
+        updateGutter(value);
+        rebuildLineNumbers(value);
+    }
+
+    /** Grows or shrinks the gutter to fit the largest source line number. */
+    private void updateGutter(String value) {
+        if (panelWidth < GUTTER_MIN_PANEL_WIDTH) {
+            return;
+        }
+        var logicalLines = value.isEmpty() ? 1 : 1 + (int) value.chars().filter(c -> c == '\n').count();
+        var desired = GUTTER_PADDING * 2 + editorFont.width(Integer.toString(logicalLines));
+        if (desired == gutterWidth) {
+            return;
+        }
+        gutterWidth = desired;
+        setX(panelX + BORDER + gutterWidth);
+        setWidth(panelWidth - BORDER * 2 - gutterWidth - SCROLLBAR_WIDTH);
+        // The vanilla text field caches its wrap width at construction, so re-flow
+        // it against the new content width while keeping the caret in place.
+        adjustingGutter = true;
+        try {
+            var cursor = textField.cursor();
+            textField.width = getWidth() - totalInnerPadding();
+            textField.setValue(value);
+            textField.seekCursor(Whence.ABSOLUTE, cursor);
+        } finally {
+            adjustingGutter = false;
+        }
     }
 
     void setEditable(boolean editable) {
