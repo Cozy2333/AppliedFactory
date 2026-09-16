@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 import com.fulent.appliedfactory.mcp.McpClientManager;
@@ -40,7 +41,6 @@ public final class FactoryControllerProgramScreen
     private static final int FILES_FOOTER_HEIGHT = 30;
     private static final int TOOLBAR_STEP = 21;
     private static final int HEADER_ACTIONS = 6;
-    private static final long AUTO_RELOAD_DEBOUNCE_MILLIS = 300L;
 
     private final List<Button> fileButtons = new ArrayList<>();
     private ScriptEditBox scriptBox;
@@ -61,13 +61,10 @@ public final class FactoryControllerProgramScreen
     private long remoteUpdatedAt;
     private boolean sourceLoaded;
     private boolean logSubscribed;
-    private boolean autoReload;
     private boolean uploadPending;
+    private UUID pendingSaveRequestId;
     private String pendingUploadSource;
     private String pendingUploadPath;
-    private String watchedPath;
-    private long watchedModifiedAt = -1L;
-    private long autoReloadDueAt = -1L;
     private int filePage;
     private Component saveStatus = Component.empty();
     private int saveStatusColor = FactoryGuiTheme.TEXT;
@@ -229,7 +226,7 @@ public final class FactoryControllerProgramScreen
             selectedPath = path;
             scriptBox.setValue(source);
             scriptBox.setEditable(true);
-            armFileWatcher(path);
+            ClientProgramWatcher.get().track(path);
             setLiteralStatus("", FactoryGuiTheme.TEXT);
             updateButtonStates();
         } catch (IOException | IllegalArgumentException exception) {
@@ -242,22 +239,23 @@ public final class FactoryControllerProgramScreen
             setStatus("gui.appliedfactory.local_backup_required", FactoryGuiTheme.ERROR);
             return;
         }
-        uploadProgram(selectedPath, scriptBox.getValue(), true);
+        var path = selectedPath;
+        uploadProgram(path, scriptBox.getValue());
     }
 
-    private void uploadProgram(String path, String source, boolean writeLocal) {
+    private void uploadProgram(String path, String rawSource) {
         if (uploadPending) {
             return;
         }
-        source = ControllerProgram.normalizeLineEndings(source);
+        var source = ControllerProgram.normalizeLineEndings(rawSource);
         scriptBox.setValue(source);
         final String compiled;
         try {
             ScriptBundler.requireTypeScriptEntry(path);
-            if (writeLocal) {
-                ScriptWorkspaceFiles.write(path, source);
-                armFileWatcher(path);
-            }
+            ScriptWorkspaceFiles.write(path, source);
+            // Keep the background watcher in step so our own write does not
+            // immediately trigger a redundant auto-reload upload.
+            ClientProgramWatcher.get().track(path);
             compiled = ScriptBundler.bundle(source, ScriptWorkspaceFiles.absolute(path).getParent());
         } catch (IOException | IllegalArgumentException | McpToolException exception) {
             setLiteralStatus("Precompile failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
@@ -270,11 +268,12 @@ public final class FactoryControllerProgramScreen
             return;
         }
         uploadPending = true;
+        pendingSaveRequestId = UUID.randomUUID();
         pendingUploadSource = source;
         pendingUploadPath = path;
         setStatus("gui.appliedfactory.saving", FactoryGuiTheme.WARNING);
         PacketDistributor.sendToServer(new SaveControllerProgramPayload(
-                menu.getBlockPos(), source, compiled, path));
+                pendingSaveRequestId, menu.getBlockPos(), source, compiled, path));
         updateButtonStates();
     }
 
@@ -312,7 +311,7 @@ public final class FactoryControllerProgramScreen
             selectedPath = path;
             scriptBox.setValue(remoteSource);
             scriptBox.setEditable(true);
-            armFileWatcher(path);
+            ClientProgramWatcher.get().track(path);
             reloadWorkspaceFiles();
             setStatus("gui.appliedfactory.pull_success", FactoryGuiTheme.SUCCESS);
             updateButtonStates();
@@ -394,9 +393,7 @@ public final class FactoryControllerProgramScreen
                 ScriptWorkspaceFiles.delete(path);
                 if (path.equals(selectedPath)) {
                     selectedPath = null;
-                    watchedPath = null;
-                    watchedModifiedAt = -1L;
-                    autoReloadDueAt = -1L;
+                    ClientProgramWatcher.get().track("");
                 }
                 reloadWorkspaceFiles();
                 updateButtonStates();
@@ -432,7 +429,7 @@ public final class FactoryControllerProgramScreen
                         ScriptWorkspaceFiles.rename(oldPath, path);
                         selectedPath = path;
                         reloadWorkspaceFiles();
-                        armFileWatcher(path);
+                        ClientProgramWatcher.get().track(path);
                         setStatus("gui.appliedfactory.file_renamed", FactoryGuiTheme.SUCCESS, path);
                     } catch (IOException | IllegalArgumentException exception) {
                         setLiteralStatus("Rename failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
@@ -502,14 +499,18 @@ public final class FactoryControllerProgramScreen
     }
 
     public void showSaveResult(ControllerProgramSaveResultPayload payload) {
-        if (!menu.getBlockPos().equals(payload.pos())) {
+        if (!menu.getBlockPos().equals(payload.pos())
+                || pendingSaveRequestId == null
+                || !pendingSaveRequestId.equals(payload.requestId())) {
             return;
         }
+        pendingSaveRequestId = null;
         uploadPending = false;
         if (payload.saved() && pendingUploadSource != null && pendingUploadPath != null) {
             remoteSource = pendingUploadSource;
             remotePath = pendingUploadPath;
             remoteUpdatedAt = payload.updatedAt();
+            McpClientManager.get().updateProgramPath(pendingUploadPath);
             setStatus("gui.appliedfactory.save_success", FactoryGuiTheme.SUCCESS);
         } else {
             setStatus("gui.appliedfactory.syntax_error", FactoryGuiTheme.ERROR, payload.message());
@@ -628,7 +629,6 @@ public final class FactoryControllerProgramScreen
         super.containerTick();
         mcpButton.setSelected(boundHere());
         mcpButton.setActionLabel(boundHere() ? "gui.appliedfactory.unbind_mcp" : "gui.appliedfactory.bind_mcp");
-        pollAutoReload();
     }
 
     @Override
@@ -687,9 +687,7 @@ public final class FactoryControllerProgramScreen
 
     private void showRemoteSource() {
         selectedPath = null;
-        watchedPath = null;
-        watchedModifiedAt = -1L;
-        autoReloadDueAt = -1L;
+        ClientProgramWatcher.get().track("");
         scriptBox.setValue(remoteSource);
         scriptBox.setEditable(false);
         setFocused(null);
@@ -697,12 +695,12 @@ public final class FactoryControllerProgramScreen
     }
 
     private void toggleAutoReload() {
-        autoReload = !autoReload;
-        autoReloadDueAt = -1L;
-        if (autoReload && selectedPath != null) {
-            armFileWatcher(selectedPath);
+        var watcher = ClientProgramWatcher.get();
+        watcher.setAutoReload(!watcher.isAutoReload());
+        if (watcher.isAutoReload()) {
+            watcher.track(selectedPath);
         }
-        setStatus(autoReload
+        setStatus(watcher.isAutoReload()
                 ? "gui.appliedfactory.auto_reload_enabled"
                 : "gui.appliedfactory.auto_reload_disabled", FactoryGuiTheme.TEXT);
         updateAutoReloadButton();
@@ -712,48 +710,11 @@ public final class FactoryControllerProgramScreen
         if (autoReloadButton == null) {
             return;
         }
+        var autoReload = ClientProgramWatcher.get().isAutoReload();
         autoReloadButton.setSelected(autoReload);
         autoReloadButton.setActionLabel(autoReload
                 ? "gui.appliedfactory.disable_auto_reload"
                 : "gui.appliedfactory.enable_auto_reload");
-    }
-
-    private void armFileWatcher(String path) {
-        watchedPath = path;
-        autoReloadDueAt = -1L;
-        try {
-            watchedModifiedAt = ScriptWorkspaceFiles.lastModifiedMillis(path);
-        } catch (IOException | IllegalArgumentException ignored) {
-            watchedModifiedAt = -1L;
-        }
-    }
-
-    private void pollAutoReload() {
-        if (!autoReload || selectedPath == null) {
-            return;
-        }
-        if (!selectedPath.equals(watchedPath)) {
-            armFileWatcher(selectedPath);
-            return;
-        }
-        try {
-            var modifiedAt = ScriptWorkspaceFiles.lastModifiedMillis(selectedPath);
-            if (modifiedAt != watchedModifiedAt) {
-                watchedModifiedAt = modifiedAt;
-                autoReloadDueAt = Util.getMillis() + AUTO_RELOAD_DEBOUNCE_MILLIS;
-                return;
-            }
-            if (autoReloadDueAt < 0L || Util.getMillis() < autoReloadDueAt || uploadPending) {
-                return;
-            }
-            autoReloadDueAt = -1L;
-            var source = ScriptWorkspaceFiles.read(selectedPath);
-            scriptBox.setValue(source);
-            uploadProgram(selectedPath, source, false);
-        } catch (IOException | IllegalArgumentException exception) {
-            autoReloadDueAt = -1L;
-            setLiteralStatus("Auto reload failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
-        }
     }
 
     private record WorkspaceEntry(String path, boolean remote) {

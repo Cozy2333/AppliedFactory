@@ -336,4 +336,3 @@ import recipes from "./data/recipes.json";
 - `storage()` 有资源而 `extract()` 没有：资源位于机器整体库存中，但该面不允许提取；
 - workflow 一直等待：检查完整输入数量、目标容量、总线是否仍存在，以及是否误用了原子批量转移；
 - 配方宏失败：在控制器界面点击 **导出工作区** 生成最新配方数据；
-- MCP 工具不可见：把 `appliedscripts/` 作为受信任项目打开，确认 `.codex/config.toml` 已加载，并在控制器 GUI 中绑定 MCP。

@@ -6,7 +6,7 @@ The "bus" below and in the API docs refers to the "Factory Bus", a kind of AE2 p
 
 ## Tools
 
-- `appliedfactory_status` — read-only status (connection, bound controller, MCP server state, `workspace` path).
+- `appliedfactory_status` — read-only status (connection, MCP server port, bound controller coordinates and its current script file, `workspace` path, and whether auto-reload is on).
 - `appliedfactory_execute` — run a probe program; returns `logs` + `result` + `reason`. Main tool.
   Pass the probe inline as `code` by preference (there is no need to create a file): it is
   precompiled as a virtual `.ts` file in the appliedscripts root, so `require_recipes(...)` and

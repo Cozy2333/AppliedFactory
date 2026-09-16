@@ -1,5 +1,7 @@
 package com.fulent.appliedfactory.network;
 
+import java.util.UUID;
+
 import com.fulent.appliedfactory.AppliedFactory;
 
 import net.minecraft.core.BlockPos;
@@ -11,7 +13,7 @@ import net.minecraft.resources.ResourceLocation;
 
 /** Server-side compilation result displayed by the controller program editor. */
 public record ControllerProgramSaveResultPayload(
-        BlockPos pos, boolean saved, String message, long updatedAt)
+        UUID requestId, BlockPos pos, boolean saved, String message, long updatedAt)
         implements CustomPacketPayload {
     private static final int MAX_MESSAGE_LENGTH = 2_048;
 
@@ -21,6 +23,7 @@ public record ControllerProgramSaveResultPayload(
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ControllerProgramSaveResultPayload>
             STREAM_CODEC = StreamCodec.composite(
+                    NetworkCodecs.UUID, ControllerProgramSaveResultPayload::requestId,
                     BlockPos.STREAM_CODEC, ControllerProgramSaveResultPayload::pos,
                     ByteBufCodecs.BOOL, ControllerProgramSaveResultPayload::saved,
                     ByteBufCodecs.stringUtf8(MAX_MESSAGE_LENGTH),

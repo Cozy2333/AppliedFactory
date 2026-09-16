@@ -69,5 +69,5 @@
   "mcp.appliedfactory.prompt.execute.timeout": "Maximum ticks to wait (0 = evaluate only, -1 = no caller timeout).",
   "mcp.appliedfactory.prompt.upload.tool": "Compile and replace the controller's production program from a workspace file. The existing program is untouched if compilation fails.",
   "mcp.appliedfactory.prompt.upload.file": "Appliedscripts-relative .ts file to compile and upload. Required so the production program keeps a local backup.",
-  "mcp.appliedfactory.prompt.status.tool": "Read-only MCP status: connection, bound controller, server state and workspace path."
+  "mcp.appliedfactory.prompt.status.tool": "Read-only MCP status: connection, MCP server port, bound controller coordinates and its current script file, the appliedscripts workspace path, and whether auto-reload is on."
 }

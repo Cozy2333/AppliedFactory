@@ -25,7 +25,7 @@ public final class NetworkHandler {
     }
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        event.registrar("4")
+        event.registrar("5")
                 .playToServer(
                         SaveControllerProgramPayload.TYPE,
                         SaveControllerProgramPayload.STREAM_CODEC,
@@ -74,15 +74,21 @@ public final class NetworkHandler {
 
     private static void handleSaveControllerProgram(
             SaveControllerProgramPayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player)) {
+            return;
+        }
         var factory = controllerFor(payload.pos(), context);
-        if (factory == null || !(context.player() instanceof ServerPlayer player)) {
+        if (factory == null) {
+            PacketDistributor.sendToPlayer(player, new ControllerProgramSaveResultPayload(
+                    payload.requestId(), payload.pos(), false,
+                    "controller not loaded or out of range", 0L));
             return;
         }
 
         var result = factory.updateControllerProgram(
                 payload.source(), payload.compiledSource(), payload.workspacePath());
         PacketDistributor.sendToPlayer(player, new ControllerProgramSaveResultPayload(
-                payload.pos(), result.successful(),
+                payload.requestId(), payload.pos(), result.successful(),
                 result.successful() ? "" : result.errorMessage(),
                 factory.getControllerProgramUpdatedAt()));
         if (result.successful()) {
@@ -189,13 +195,14 @@ public final class NetworkHandler {
         if (!(factory instanceof FactoryControllerBlockEntity controller)
                 || controller.getBlockPos().distSqr(player.blockPosition()) > 64) {
             PacketDistributor.sendToPlayer(player, new McpBindResultPayload(
-                    payload.requestId(), payload.pos(), false, "", ""));
+                    payload.requestId(), payload.pos(), false, "", "", ""));
             return;
         }
         var dimension = player.level().dimension().location().toString();
         var label = "factory@" + payload.pos().toShortString();
         PacketDistributor.sendToPlayer(player, new McpBindResultPayload(
-                payload.requestId(), payload.pos(), true, dimension, label));
+                payload.requestId(), payload.pos(), true, dimension, label,
+                controller.getControllerProgramPath()));
     }
 
     private static void handleSaveControllerProgramResult(
@@ -223,16 +230,20 @@ public final class NetworkHandler {
     private static FactoryControllerBlockEntity controllerFor(
             BlockPos pos, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)
-                || !(player.containerMenu instanceof FactoryControllerMenuAccess menu)) {
+                || player.blockPosition().distSqr(pos) > 64) {
             return null;
         }
-        FactoryControllerBlockEntity factory = menu.getBlockEntity();
-        if (factory == null
-                || !factory.getBlockPos().equals(pos)
-                || factory.getBlockPos().distSqr(player.blockPosition()) > 64) {
-            return null;
+        // While the editor is open the menu is the authoritative link. Background
+        // features such as auto-reload run without it, so fall back to the loaded
+        // controller at the requested position in the player's current dimension.
+        if (player.containerMenu instanceof FactoryControllerMenuAccess menu) {
+            FactoryControllerBlockEntity factory = menu.getBlockEntity();
+            if (factory != null && factory.getBlockPos().equals(pos)) {
+                return factory;
+            }
         }
-        return factory;
+        return player.level().getBlockEntity(pos) instanceof FactoryControllerBlockEntity controller
+                ? controller : null;
     }
 
     /** Looks up the controller at {@code pos} in the player's current dimension, if loaded. */

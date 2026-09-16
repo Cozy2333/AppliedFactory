@@ -1,5 +1,7 @@
 package com.fulent.appliedfactory.network;
 
+import java.util.UUID;
+
 import com.fulent.appliedfactory.AppliedFactory;
 import com.fulent.appliedfactory.script.ControllerProgram;
 
@@ -12,13 +14,14 @@ import net.minecraft.resources.ResourceLocation;
 
 /** Client-to-server update carrying editable and preprocessed program forms. */
 public record SaveControllerProgramPayload(
-        BlockPos pos, String source, String compiledSource, String workspacePath)
+        UUID requestId, BlockPos pos, String source, String compiledSource, String workspacePath)
         implements CustomPacketPayload {
     public static final Type<SaveControllerProgramPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(AppliedFactory.MOD_ID, "save_controller_program"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, SaveControllerProgramPayload> STREAM_CODEC =
             StreamCodec.composite(
+                    NetworkCodecs.UUID, SaveControllerProgramPayload::requestId,
                     BlockPos.STREAM_CODEC, SaveControllerProgramPayload::pos,
                     ByteBufCodecs.stringUtf8(ControllerProgram.MAX_SOURCE_BYTES),
                     SaveControllerProgramPayload::source,

@@ -7,6 +7,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
@@ -15,6 +16,7 @@ public final class MeFactoryManagerClient {
     public MeFactoryManagerClient(IEventBus modEventBus) {
         modEventBus.addListener(this::registerScreens);
         NeoForge.EVENT_BUS.addListener(MeFactoryManagerClient::onLoggingOut);
+        NeoForge.EVENT_BUS.addListener(MeFactoryManagerClient::onClientTick);
     }
 
     private void registerScreens(RegisterMenuScreensEvent event) {
@@ -22,7 +24,12 @@ public final class MeFactoryManagerClient {
                 FactoryControllerProgramScreen::new);
     }
 
+    private static void onClientTick(ClientTickEvent.Post event) {
+        ClientProgramWatcher.get().tick();
+    }
+
     private static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        ClientProgramWatcher.get().reset();
         McpClientManager.get().stop();
     }
 }

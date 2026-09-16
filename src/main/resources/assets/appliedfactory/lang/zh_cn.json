@@ -69,5 +69,5 @@
   "mcp.appliedfactory.prompt.execute.timeout": "最长等待刻数（0 表示仅求值，-1 表示不设调用方超时）。",
   "mcp.appliedfactory.prompt.upload.tool": "从工作区文件编译并替换控制器的正式程序；编译失败时原程序保持不变。",
   "mcp.appliedfactory.prompt.upload.file": "要编译并上传的 .ts 文件（相对 appliedscripts），必填以保证正式程序有本地备份。",
-  "mcp.appliedfactory.prompt.status.tool": "只读 MCP 状态：连接、绑定的控制器、服务状态与工作区路径。"
+  "mcp.appliedfactory.prompt.status.tool": "只读 MCP 状态：连接、MCP 服务端口、已绑定控制器坐标及其当前脚本文件、appliedscripts 工作区路径、自动重载开关。"
 }

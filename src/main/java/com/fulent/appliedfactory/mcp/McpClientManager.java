@@ -40,6 +40,15 @@ public final class McpClientManager {
         this.binding = binding;
     }
 
+    /** Remembers the workspace backup file backing the bound controller's live program. */
+    public void updateProgramPath(String programPath) {
+        var current = binding;
+        if (current == null || java.util.Objects.equals(current.programPath(), programPath)) {
+            return;
+        }
+        binding = new McpBinding(current.dimension(), current.pos(), current.label(), programPath);
+    }
+
     public boolean isRunning() {
         return server != null && server.isRunning();
     }
@@ -82,7 +91,7 @@ public final class McpClientManager {
                 PacketDistributor.sendToServer(new BindMcpControllerPayload(requestId, pos));
             } catch (RuntimeException exception) {
                 registry.completeBind(new McpBindResultPayload(
-                        requestId, pos, false, "", "send failed: " + exception.getMessage()));
+                        requestId, pos, false, "", "send failed: " + exception.getMessage(), ""));
             }
         });
         future.thenAccept(result -> {
@@ -90,7 +99,8 @@ public final class McpClientManager {
                 return;
             }
             if (result.accepted()) {
-                binding = new McpBinding(result.dimension(), result.pos(), result.label());
+                binding = new McpBinding(result.dimension(), result.pos(), result.label(),
+                        result.programPath());
                 if (!isRunning()) {
                     if (start(DEFAULT_PORT)) {
                         mc.player.sendSystemMessage(Component.literal(

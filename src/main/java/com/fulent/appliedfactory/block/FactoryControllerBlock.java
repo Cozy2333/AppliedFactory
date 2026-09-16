@@ -1,5 +1,7 @@
 package com.fulent.appliedfactory.block;
 
+import org.jetbrains.annotations.Nullable;
+
 import com.fulent.appliedfactory.blockentity.FactoryControllerBlockEntity;
 import com.fulent.appliedfactory.menu.FactoryControllerProgramMenu;
 
@@ -10,7 +12,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.Mirror;
@@ -55,6 +59,18 @@ public final class FactoryControllerBlock extends BaseEntityBlock {
     @Override
     public BlockState getStateForPlacement(BlockPlaceContext context) {
         return defaultBlockState().setValue(FACING, context.getHorizontalDirection().getOpposite());
+    }
+
+    // Whoever places the controller starts following its logs, so scripts that
+    // print during setup are visible without opening the editor first.
+    @Override
+    public void setPlacedBy(Level level, BlockPos pos, BlockState state,
+            @Nullable LivingEntity placer, ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
+        if (!level.isClientSide && placer instanceof ServerPlayer player
+                && level.getBlockEntity(pos) instanceof FactoryControllerBlockEntity controller) {
+            controller.updateLogSubscription(player.getUUID(), true);
+        }
     }
 
     @Override

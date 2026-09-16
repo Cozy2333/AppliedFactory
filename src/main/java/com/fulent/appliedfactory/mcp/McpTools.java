@@ -10,6 +10,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import com.fulent.appliedfactory.client.ClientProgramWatcher;
 import com.fulent.appliedfactory.factory.McpProbeManager;
 import com.fulent.appliedfactory.network.ExecuteMcpCodePayload;
 import com.fulent.appliedfactory.network.McpCodeResultPayload;
@@ -191,6 +192,9 @@ public final class McpTools {
         } catch (Exception exception) {
             throw new McpToolException(-32000, "upload failed: " + exception.getMessage());
         }
+        if (payload.ok()) {
+            McpClientManager.get().updateProgramPath(program.workspacePath());
+        }
         var inner = new JsonObject();
         inner.addProperty("ok", payload.ok());
         inner.addProperty("message", payload.message());
@@ -200,18 +204,31 @@ public final class McpTools {
     private JsonObject status() {
         var inner = new JsonObject();
         var mc = Minecraft.getInstance();
-        var binding = McpClientManager.get().binding();
+        var manager = McpClientManager.get();
+        var binding = manager.binding();
         inner.addProperty("connected", mc.getConnection() != null);
         inner.addProperty("singlePlayer", mc.isSingleplayer());
-        inner.addProperty("workspace", ScriptBundler.workspaceDir().toString());
+        inner.addProperty("workspace", ScriptBundler.workspaceDir().toAbsolutePath().toString());
+        var mcp = new JsonObject();
+        mcp.addProperty("running", manager.isRunning());
+        mcp.addProperty("port", manager.port());
+        inner.add("mcp", mcp);
         if (binding != null) {
             inner.addProperty("bound", true);
-            inner.addProperty("dimension", binding.dimension());
-            inner.addProperty("pos", binding.pos().toShortString());
-            inner.addProperty("label", binding.label());
+            var controller = new JsonObject();
+            controller.addProperty("dimension", binding.dimension());
+            controller.addProperty("x", binding.pos().getX());
+            controller.addProperty("y", binding.pos().getY());
+            controller.addProperty("z", binding.pos().getZ());
+            controller.addProperty("label", binding.label());
+            controller.addProperty("programPath", binding.programPath());
+            controller.addProperty("inCurrentDimension", mc.level != null
+                    && binding.dimension().equals(mc.level.dimension().location().toString()));
+            inner.add("controller", controller);
         } else {
             inner.addProperty("bound", false);
         }
+        inner.addProperty("autoReload", ClientProgramWatcher.get().isAutoReload());
         return inner;
     }
 
