@@ -167,7 +167,7 @@ interface Network {
    */
   storage(): ResourceArray;
   storage(channel: ResourceChannel): ResourceArray;
-  /** 当前网络是否存在该 key 的可合成样板；不模拟材料或 CPU 容量。 */
+  /** 当前网络是否存在该 key 的可合成样板； */
   canOrder(resource: ResourceSpec): boolean;
   /** 向网络提交合成；yield 会等待材料、CPU 和成品，并返回托管的成品资源。 */
   order(resource: ResourceSpec): CraftingAction;
@@ -267,7 +267,7 @@ interface RecipeFilter {
  * 客户端预编译宏：MCP 的 appliedfactory_execute / appliedfactory_upload 发送前，以及
  * 控制器 GUI 保存前，客户端读取 appliedscripts/processing_recipes.json（及
  * recipe_types.json），按过滤器选出配方后把整个调用替换为配方数组字面量。控制器运行时
- * 不存在此函数；GUI 输入视为 appliedscripts/ 根目录中的虚拟文件。过滤器没有命中时
+ * 不存在此函数；过滤器没有命中时
  * 展开为 []；processing_recipes.json 缺失或过滤器非法时打包报错。
  */
 declare function require_recipes(filter?: RecipeFilter): readonly Recipe[];

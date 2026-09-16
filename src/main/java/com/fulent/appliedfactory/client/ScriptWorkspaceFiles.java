@@ -39,6 +39,20 @@ final class ScriptWorkspaceFiles {
                 StandardCharsets.UTF_8);
     }
 
+    static void delete(String relativePath) throws IOException {
+        Files.deleteIfExists(resolve(relativePath));
+    }
+
+    static void rename(String from, String to) throws IOException {
+        var source = resolve(from);
+        var target = resolve(to);
+        if (Files.exists(target)) {
+            throw new IOException("target already exists: " + to);
+        }
+        Files.createDirectories(target.getParent());
+        Files.move(source, target);
+    }
+
     static boolean exists(String relativePath) {
         try {
             return Files.isRegularFile(resolve(relativePath));

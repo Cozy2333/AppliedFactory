@@ -15,7 +15,7 @@ import net.minecraft.world.item.crafting.RecipeType;
 
 import appeng.api.stacks.AEItemKey;
 
-/** Shared recipe helpers used by the reference export ({@code /appliedfactory export}). */
+/** Shared recipe helpers used by the client-side workspace export. */
 public final class FactoryRecipes {
     private FactoryRecipes() {
     }

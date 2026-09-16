@@ -153,7 +153,9 @@ const iron = require_recipes({
 });
 ```
 
-Run `/appliedfactory export` after recipes in the modpack change.
+Click **Export Workspace** in the controller screen after recipes in the modpack change. The same precompilation runs for MCP probes: inline `code` is treated as a virtual file in the `appliedscripts/` root, so a probe needs no disk file.
+
+If baked recipes are needed, leave a reusable baking script in the workspace instead of a one-off inline batch, so the data can be regenerated after the modpack updates.
 
 ## JSON imports
 
@@ -170,4 +172,4 @@ Paths are resolved from the selected TypeScript file and must remain inside `app
 - No buses: verify that the Factory Buses and the selected controller side share an AE network.
 - `storage()` has entries but `extract()` is empty: the machine face does not allow those entries to be extracted.
 - A workflow keeps waiting: check source amounts, target capacity and whether the bus still exists.
-- Recipe export is missing: run `/appliedfactory export` or `/appliedfactory setupworkspace`.
+- Recipe export is missing: click **Export Workspace** in the controller screen.

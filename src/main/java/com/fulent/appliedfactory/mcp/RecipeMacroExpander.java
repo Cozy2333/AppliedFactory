@@ -192,8 +192,8 @@ public final class RecipeMacroExpander {
         }
         if (path == null) {
             throw new McpToolException(-32602, MACRO + "(): " + name
-                    + " not found in the appliedscripts workspace; run /appliedfactory export"
-                    + " (or setupworkspace) in a local save to generate it");
+                    + " not found in the appliedscripts workspace; open a factory controller"
+                    + " and click 'Export Workspace' to generate it");
         }
         try {
             return Files.readString(path, StandardCharsets.UTF_8);

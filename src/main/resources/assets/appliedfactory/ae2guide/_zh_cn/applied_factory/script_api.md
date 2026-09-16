@@ -39,7 +39,7 @@ registerProcessingPattern(
 
 1. 在 `appliedscripts/` 中新建或选择 `.ts` 文件；
 2. 用 IDE 和 `applied_factory.d.ts` 完成类型检查；
-3. 用 GUI 上传，或先通过 MCP 的 `appliedfactory_execute` 运行探针；
+3. 用 GUI 上传，或先通过 MCP 的 `appliedfactory_execute` 运行探针（内联 `code` 会被当作 `appliedscripts/` 根目录下的虚拟文件预编译，无需写入磁盘）；
 4. 确认网络、总线、机器与资源后，再上传生产程序。
 
 ## 2. 编译、上传与运行生命周期
@@ -79,7 +79,7 @@ registerProcessingPattern(
 
 ### 4.1 面与网络
 
-`network(side)` 接受世界绝对方向 `up/down/north/south/west/east`，也接受相对控制器正面的 `front/back/left/right`。`front` 是控制器方块的朝向；俯视时 `left` 为逆时针，`right` 为顺时针。相对方向在创建句柄时解析为绝对面，因此 `network("front").side` 返回实际世界方向。`PatternDefinition.orderNetwork` 使用相同规则。
+`network(side)` 接受世界绝对方向 `up/down/north/south/west/east`，也接受相对控制器正面的 `front/back/left/right`。相对方向在创建句柄时解析为绝对面，因此 `network("front").side` 返回实际世界方向。`PatternDefinition.orderNetwork` 使用相同规则。
 
 不要用 `===` 比较两个 `Network` 包装对象。要比较它们当前是否属于同一 AE 网格，请使用：
 
@@ -212,7 +212,7 @@ AE2 在样板的全部输出回到订单网络后认定加工完成，输出来�
 
 ## 8. 物品与世界交互
 
-`rename`、`use`、`place`、`drop`、`break` 与 `redstone` 都是一次性同步操作，不是 Action。物品专用函数会在运行时验证资源是否为 `AEItemKey`。
+`rename`、`use`、`place`、`drop`、`break` 与 `redstone` 都是一次性同步操作。
 
 ### 8.1 NBT 与改名
 
@@ -286,6 +286,8 @@ NBT 转换为 JavaScript 对象、数组、字符串和数字。超过 JavaScrip
 
 `require_recipes()` 是客户端预编译宏，不是运行时函数。上传前，客户端读取 `processing_recipes.json`；使用 `machine` 过滤时还读取 `recipe_types.json`，然后把调用替换为配方数组字面量。
 
+同样的预编译逻辑也用于 MCP 探测：内联 `code` 被视为 `appliedscripts/` 根目录下的虚拟文件。因此如果确实需要烘培配方，请留下可复用的烘培脚本，方便整合包更新后重新生成数据。
+
 每条配方是 `{ id, type, inputs, outputs, json }`。输入输出条目与 `stack()` 同形，可直接用于 `registerProcessingPattern`。多选 ingredient 槽以 `options` 保存全部候选，`key` 是用于直接注册的代表物。
 
 过滤器字段值可以是字符串或字符串数组（any-of）：
@@ -333,5 +335,5 @@ import recipes from "./data/recipes.json";
 - `bus.channels` 有通道但 `extract()` 为空：能力存在，但当前没有可从该面取出的资源；
 - `storage()` 有资源而 `extract()` 没有：资源位于机器整体库存中，但该面不允许提取；
 - workflow 一直等待：检查完整输入数量、目标容量、总线是否仍存在，以及是否误用了原子批量转移；
-- 配方宏失败：先执行 `/appliedfactory export` 或 `/appliedfactory setupworkspace` 生成最新配方数据；
+- 配方宏失败：在控制器界面点击 **导出工作区** 生成最新配方数据；
 - MCP 工具不可见：把 `appliedscripts/` 作为受信任项目打开，确认 `.codex/config.toml` 已加载，并在控制器 GUI 中绑定 MCP。

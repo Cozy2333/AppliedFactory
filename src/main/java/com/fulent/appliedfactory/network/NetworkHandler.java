@@ -7,11 +7,7 @@ import java.util.UUID;
 import com.fulent.appliedfactory.AppliedFactory;
 import com.fulent.appliedfactory.blockentity.FactoryControllerBlockEntity;
 import com.fulent.appliedfactory.client.ClientControllerProgramPayloadHandler;
-import com.fulent.appliedfactory.client.ClientMachineIconsPayloadHandler;
 import com.fulent.appliedfactory.client.ClientMcpPayloadHandler;
-import com.fulent.appliedfactory.client.ClientRecipeDumpPayloadHandler;
-import com.fulent.appliedfactory.command.MachineIconManager;
-import com.fulent.appliedfactory.command.RecipeDumpManager;
 import com.fulent.appliedfactory.factory.McpProbeManager;
 import com.fulent.appliedfactory.factory.McpProbeResult;
 import com.fulent.appliedfactory.menu.FactoryControllerMenuAccess;
@@ -29,7 +25,7 @@ public final class NetworkHandler {
     }
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        event.registrar("3")
+        event.registrar("4")
                 .playToServer(
                         SaveControllerProgramPayload.TYPE,
                         SaveControllerProgramPayload.STREAM_CODEC,
@@ -73,23 +69,7 @@ public final class NetworkHandler {
                 .playToClient(
                         McpBindResultPayload.TYPE,
                         McpBindResultPayload.STREAM_CODEC,
-                        NetworkHandler::handleMcpBindResult)
-                .playToClient(
-                        RequestMachineIconsPayload.TYPE,
-                        RequestMachineIconsPayload.STREAM_CODEC,
-                        NetworkHandler::handleMachineIconsRequest)
-                .playToServer(
-                        MachineIconsPayload.TYPE,
-                        MachineIconsPayload.STREAM_CODEC,
-                        NetworkHandler::handleMachineIcons)
-                .playToClient(
-                        RequestRecipeDumpPayload.TYPE,
-                        RequestRecipeDumpPayload.STREAM_CODEC,
-                        NetworkHandler::handleRecipeDumpRequest)
-                .playToServer(
-                        RecipeDumpChunkPayload.TYPE,
-                        RecipeDumpChunkPayload.STREAM_CODEC,
-                        NetworkHandler::handleRecipeDumpChunk);
+                        NetworkHandler::handleMcpBindResult);
     }
 
     private static void handleSaveControllerProgram(
@@ -238,25 +218,6 @@ public final class NetworkHandler {
 
     private static void handleMcpBindResult(McpBindResultPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> ClientMcpPayloadHandler.handleBindResult(payload));
-    }
-
-    private static void handleMachineIconsRequest(
-            RequestMachineIconsPayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> ClientMachineIconsPayloadHandler.handleRequest(payload));
-    }
-
-    private static void handleMachineIcons(MachineIconsPayload payload, IPayloadContext context) {
-        MachineIconManager.accept(payload);
-    }
-
-    private static void handleRecipeDumpRequest(
-            RequestRecipeDumpPayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> ClientRecipeDumpPayloadHandler.handleRequest(payload));
-    }
-
-    private static void handleRecipeDumpChunk(
-            RecipeDumpChunkPayload payload, IPayloadContext context) {
-        RecipeDumpManager.accept(payload);
     }
 
     private static FactoryControllerBlockEntity controllerFor(

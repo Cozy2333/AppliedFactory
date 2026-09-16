@@ -220,8 +220,11 @@ public final class McpTools {
      * relative to the appliedscripts workspace) takes precedence over the inline
      * {@code inlineName} argument, so long scripts with baked recipes can live in
      * files instead of the tool call. Production upload has a separate file-only path.
-     * Relative default JSON imports and {@code require_recipes(filter)} calls are
-     * expanded before TypeScript is transpiled to executable JavaScript.
+     *
+     * <p>The inline form is precompiled as a virtual {@code .ts} file placed in
+     * the appliedscripts root, so relative default JSON imports and
+     * {@code require_recipes(filter)} calls resolve against the workspace root
+     * before TypeScript is transpiled to executable JavaScript.
      */
     private static String scriptSource(JsonObject arguments, String inlineName)
             throws McpToolException {
