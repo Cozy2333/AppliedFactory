@@ -35,6 +35,8 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.CommonHooks;
 import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.common.util.FakePlayerFactory;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.items.IItemHandler;
 
 import appeng.api.behaviors.ExternalStorageStrategy;
 import appeng.api.stacks.AEKeyType;
@@ -457,6 +459,45 @@ public final class FactoryBusTarget {
      */
     public Set<AEKeyType> channels() {
         return storages().keySet();
+    }
+
+    // ---- Per-slot access ----------------------------------------------------
+
+    /**
+     * The target block's whole-container item handler, queried without a face,
+     * or null when the target exposes no item storage. Using the whole
+     * container as context is what lets a slot handle bypass the accessed
+     * face's input/output capability filters.
+     */
+    @Nullable
+    public IItemHandler itemHandler() {
+        if (!(level instanceof ServerLevel serverLevel) || !isLoaded()) {
+            return null;
+        }
+        return serverLevel.getCapability(Capabilities.ItemHandler.BLOCK, position, null);
+    }
+
+    /** Number of item slots in the target's whole container, or 0 when unavailable. */
+    public int itemSlotCount() {
+        var handler = itemHandler();
+        return handler == null ? 0 : handler.getSlots();
+    }
+
+    /**
+     * One exact slot of the target's whole container as an {@link MEStorage}, or
+     * null for non-item channels and out-of-range slots. The returned wrapper
+     * ignores the accessed face's capability restrictions.
+     */
+    @Nullable
+    public MEStorage slotStorage(AEKeyType type, int slot) {
+        if (!type.equals(AEKeyType.items()) || slot < 0) {
+            return null;
+        }
+        var handler = itemHandler();
+        if (handler == null || slot >= handler.getSlots()) {
+            return null;
+        }
+        return new FactorySlotStorage(handler, slot);
     }
 
     private static Map<AEKeyType, MEStorage> createWrappers(

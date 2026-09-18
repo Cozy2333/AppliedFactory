@@ -1,8 +1,12 @@
 /**
- * Applied Factory controller scripting API.
+ * Applied Factory scripting API — authoritative type and signature reference.
  *
- * This file is the authoritative type and signature reference. See SCRIPT_API.md
- * for the execution model and behavioral details.
+ * Types and signatures are defined by this file; appliedscripts/SCRIPT_API.md
+ * only describes the runtime model and behavioral semantics. Controller
+ * scripts are transpiled to ES2022 JavaScript on the client, then evaluated
+ * once by GraalJS when the controller loads: scripts obtain handles through
+ * global functions, register processing patterns, and start passive generator
+ * workflows through `go`.
  */
 
 type Direction = "up" | "down" | "north" | "south" | "west" | "east";
@@ -17,180 +21,293 @@ type NbtValue =
   | null;
 type NbtCompound = Readonly<Record<string, NbtValue>>;
 
-/** Registered AEKeyType ID, such as "ae2:i" for items or "ae2:f" for fluids. */
+/** Registry ID of an AEKeyType, e.g. "ae2:i" for items or "ae2:f" for fluids. */
 type ResourceChannel = string;
 
 type Action = SleepAction | TransferAction<unknown> | CraftingAction;
 
-/** An AE key and amount specification without a movable source. */
+/** Describes only the AE key and amount to match; not an operable source handle. */
 interface ResourceSpec {
+  /** See channels.json for valid values. */
   readonly channel: string;
+  /** Decoded directly by that channel's AEKey codec. */
   readonly key: NbtCompound;
+  /** A positive amount extracts at most that much; `-1` means as much as possible. */
   readonly amount: number;
 }
 
 interface Resource {
+  /** Raw AEKeyType ID; unknown extension channels need no extra interface or adapter. */
   readonly channel: string;
+  /** The channel's own codec NBT, safe to pass back to stack(channel, key, amount). */
   readonly key: NbtCompound;
+  /** AEKey ID for display and filtering; not used to rebuild unknown keys. */
   readonly id: string;
   readonly amount: number;
   readonly origin: ResourceOrigin;
 
-  /** Moves all possible amounts over one or more attempts. */
+  /** Partial transfer: moves whatever is currently possible until the resource is gone. */
   to(target: ResourceTarget): TransferAction<Resource | null>;
-  /** Moves only when the complete amount can be transferred atomically. */
+  /** Exact transfer: waits until source and target can handle the complete amount at once. */
   pushExactlyInto(target: ResourceTarget): TransferAction<boolean>;
 }
 
+/** A real JS array with bulk transfer methods for the whole snapshot. */
 interface ResourceArray extends ReadonlyArray<Resource> {
-  /** Independently advances every resource; now() returns the remaining bundle. */
+  /**
+   * Bulk partial transfer: equivalent to calling to() on every resource in the
+   * array, independently moving min(source available, target capacity). A
+   * resource that is short or cannot fit does not block the others.
+   * now() returns the ResourceArray that is still untransferred, or null when all moved.
+   */
   to(target: ResourceTarget): TransferAction<ResourceArray | null>;
-  /** Transfers the entire array as one atomic batch. */
+  /**
+   * Bulk exact transfer: moves only when every resource can be transferred
+   * completely at once (source has the full amount and the target can accept it).
+   * If any is unsatisfied the whole batch waits and nothing moves; on success the
+   * whole batch moves in one step. now() returns whether all succeeded.
+   */
   pushExactlyInto(target: ResourceTarget): TransferAction<boolean>;
 }
 
 interface ResourceOrigin {
-  readonly kind: "network" | "bus" | "escrow";
-  readonly endpoint: Network | Bus | null;
+  readonly kind: "network" | "bus" | "slot" | "escrow";
+  readonly endpoint: Network | Bus | Slot | null;
 }
 
 interface TransferAction<TResult> {
-  /** Performs one immediate attempt without waiting. */
   now(): TResult;
 }
 
 interface SleepAction {}
 
-/** Yield-only AE network crafting request. The yield expression returns a Resource. */
+/** Network crafting order; yield-only, and the yield expression returns the finished Resource. */
 interface CraftingAction {}
 
 interface BlockView {
   readonly id: string;
+  /** Full block state string, e.g. "minecraft:furnace[facing=north,lit=false]". */
   readonly state: string;
+  /** Target block coordinates. */
   readonly x: number;
   readonly y: number;
   readonly z: number;
+  /** Block state property table (name → value); booleans/integers keep their type, others become strings. */
   readonly properties: Readonly<Record<string, boolean | number | string>>;
+  /** Block entity type id; null when there is no block entity. */
   readonly blockEntityType: string | null;
+  /** Read-only NBT snapshot of the block entity itself; null when there is none. */
   readonly nbt: Readonly<Record<string, NbtValue>> | null;
 
+  /** Whether this BlockView points at the same block as another (compared by coordinates). */
   isSameBlock(other: BlockView): boolean;
 }
 
 interface Bus {
-  /** Whether this bus can currently be resolved on its grid. */
+  /** The bus itself currently resolves on its grid. */
   readonly exists: boolean;
-  /** Direction from the cable host toward the target block. */
+  /** Direction of the bus on its host (pointing toward the target block). */
   readonly targetFace: Direction;
-  /** Target block, or an air view when unavailable. */
+  /** Block the bus faces; air (minecraft:air) when absent or unloaded, never null. */
   readonly target: BlockView;
-  /** Resource channels supported by the target face. */
+  /** Resource channel IDs the target face currently supports for input/output (e.g. "ae2:i", "ae2:f"), independent of contents. */
   readonly channels: readonly string[];
 
+  /**
+   * Unified query: extract(channel?, key?, amount?). All three are optional and
+   * the result is always a ResourceArray. Returns an empty array when nothing
+   * matches, never null. Omitting amount (or -1) means as much as available;
+   * a positive number caps the result.
+   */
   extract(): ResourceArray;
   extract(channel: ResourceChannel): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
+  /**
+   * Read-only inventory query: returns the target block's **whole inventory**
+   * (every slot, regardless of the bus face, including input slots that cannot
+   * be extracted), always a ResourceArray, empty when there is nothing. Accepts
+   * a channel filter. The result can be turned into an Action, but entries that
+   * cannot be extracted share the semantics of "absent" at execution time (the
+   * transfer waits).
+   */
   storage(): ResourceArray;
   storage(channel: ResourceChannel): ResourceArray;
+  /** Immediately extracts the exact items and throws them out from the bus facing; not scheduled. */
   drop(item: Resource): boolean;
+  /** Immediately uses the target block empty-handed; shift means sneak-use; false when it did not succeed. */
   use(): boolean;
   use(shift: boolean): boolean;
+  /** Immediately uses one item from its source; the result is written back to the same source. */
   use(item: Resource, shift?: boolean): boolean;
+  /** Immediately places one BlockItem as a block; the remainder is written back to its source. */
   place(block: Resource, shift?: boolean): boolean;
+  /** Reads the redstone level the target block emits toward the bus face (0-15); 0 when bus or target cannot resolve. */
   redstone(): number;
+  /** Sets the redstone level the bus emits outward from its physical cable face (0-15); false when the bus cannot resolve. */
   redstone(level: number): boolean;
+  /** Immediately breaks one block; null on failure, otherwise the drop handles written back to the tool's source. */
   break(tool: Resource): ResourceArray | null;
+  /**
+   * Gets a handle to the numbered slot of the target container (ae2:i inventory).
+   * The index is 0-based and resolved against the container's whole inventory,
+   * ignoring the bus face's input/output restrictions. The slot handle can
+   * extract()/storage(), and can be used as the target of to()/pushExactlyInto().
+   * When the index is out of range the handle's exists is false and related
+   * operations keep waiting.
+   */
+  slot(index: number): Slot;
+}
+
+/** A single item-slot handle returned by `bus.slot(index)`; operates directly on that slot, bypassing the face's input/output capability restrictions. */
+interface Slot {
+  /** Slot number in the container, 0-based. */
+  readonly index: number;
+  /** The bus resolves on its grid and the target container actually has this slot. */
+  readonly exists: boolean;
+
+  /** Same shape as Bus/Network queries, but only for this slot; slots cover ae2:i items only. */
+  extract(): ResourceArray;
+  extract(channel: ResourceChannel): ResourceArray;
+  extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
+  extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
+  /** Read-only query of this slot's current contents; always a ResourceArray. */
+  storage(): ResourceArray;
+  storage(channel: ResourceChannel): ResourceArray;
 }
 
 interface Network {
+  /** Resolved absolute world direction; relative selectors are not preserved here. */
   readonly side: Direction;
   readonly online: boolean;
+  /** Current topology snapshot, re-enumerated on every read. */
   readonly buses: readonly Bus[];
 
+  /** Called synchronously when the topology changes. */
   onChange(callback: () => void): void;
+  /** Live check whether two controller faces join the same AE grid; disconnected faces return false. */
   isSameNetwork(other: Network): boolean;
+  /**
+   * Unified query: extract(channel?, key?, amount?). All three are optional and
+   * the result is always a ResourceArray. Returns an empty array when nothing
+   * matches, never null. Omitting amount (or -1) means as much as available;
+   * a positive number caps the result.
+   */
   extract(): ResourceArray;
   extract(channel: ResourceChannel): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
+  /**
+   * Read-only inventory query: everything on the network is extractable, so
+   * this equals extract(); always a ResourceArray. Accepts a channel filter.
+   */
   storage(): ResourceArray;
   storage(channel: ResourceChannel): ResourceArray;
-  /** Whether the network currently exposes a crafting pattern for this key. */
+  /** Whether the network currently has an autocraftable pattern for this key. */
   canOrder(resource: ResourceSpec): boolean;
-  /** Waits for a complete AE craft and returns its output as a managed Resource. */
+  /** Submits a craft to the network; yield waits for ingredients, CPU and output, returning the managed finished resource. */
   order(resource: ResourceSpec): CraftingAction;
 }
 
-type ResourceTarget = Network | Bus;
+type ResourceTarget = Network | Bus | Slot;
 
 interface PatternDefinition {
   readonly orderNetwork: NetworkSide;
+  /** stack()/item() handles, or plain {channel, key, amount} objects (same shape as Recipe.inputs/Recipe.outputs, safe to reference directly). */
   readonly inputs: readonly ResourceSpec[];
   readonly outputs: readonly ResourceSpec[];
 }
 
-/** Returns the network attached to a controller side. */
+/** Gets the network on the controller side; front/back/left/right are relative to the controller front. */
 declare function network(side: NetworkSide): Network;
+/** Returns a SleepAction that can be yielded to wait some ticks. */
 declare function sleep(ticks: number): SleepAction;
 
-/** Starts a passive generator workflow. */
+/** Starts a passive production line. A passive line does not return; once it
+ * returns it is not restarted automatically. Combined with active network
+ * orders it can uniformly push energy or pull returns. */
 declare function go(factory: () => Generator<Action, unknown, any>): void;
 
 interface Order {
+  /** Input resources for this order, preserving the pattern's input slot order; duplicate inputs are not merged and can be routed by index. */
   readonly input: ResourceArray;
+  /** Ordering network. */
   readonly network: Network;
-  /** Cancels the parent AE request and returns inputs still held by the controller. */
+  /** Cancels the parent AE crafting request and returns inputs still held in controller escrow to the ordering network. */
   cancel(): boolean;
 }
-
+/** Registers processing patterns; handler receives an Order. */
 declare function registerProcessingPattern(
   patterns: readonly PatternDefinition[],
   handler: (order: Order) => Generator<Action, unknown, any>,
 ): void;
 
+/** Pushes a message to players subscribed to this controller's log and writes
+ * it to the server log; can be called at any time.
+ * MCP execution also captures logs as its return. */
 declare function log(message: string): void;
 
-/** components is a Minecraft 1.21 data component patch. */
+/** components is a 1.21+ data component patch, not a full item save NBT. */
 declare function item(
   id: string,
   amount: number,
   components?: NbtCompound,
 ): ResourceSpec;
-
-/** key is decoded by the selected AEKeyType codec. */
+/** The key's structure is fully defined by the matching AEKeyType codec. */
 declare function stack(
   channel: ResourceChannel,
   key: NbtCompound,
   amount: number,
 ): ResourceSpec;
-
+/** Immediately renames in place; throws at runtime when not ae2:i, returns null when resources are insufficient. */
 declare function rename(item: Resource, name: string): Resource | null;
+/** Reads the full ItemStack save NBT; throws at runtime when not ae2:i. */
 declare function itemNbt(item: Resource): NbtCompound;
 
+/** One input slot: key is the slot's representative (safe to register) and options lists every accepted alternative. */
 interface RecipeInput extends ResourceSpec {
-  /** Alternatives accepted by a tag or choice ingredient slot. */
+  /**
+   * Every alternative accepted by this slot (full ResourceSpec, including
+   * channel); present for tag/multi-choice ingredient slots, omitted when there
+   * is only one option. A recipe needs any one of them, not all.
+   */
   readonly options?: readonly ResourceSpec[];
 }
 
+/** Processing recipes (crafting/stonecutting/smithing already excluded). inputs/outputs are normalized resource declarations, safe to pass to registerProcessingPattern. */
 interface Recipe {
   readonly id: string;
+  /** Recipe type id, e.g. "minecraft:smelting". */
   readonly type: string;
+  /** Normalized inputs (the server-side generic extraction covers items only; fluids/chemicals/input counts follow the json). A slot with options means any one of them. */
   readonly inputs: readonly RecipeInput[];
+  /** Normalized primary output, same shape as stack()'s ResourceSpec. */
   readonly outputs: readonly ResourceSpec[];
+  /** Raw recipe JSON for read-only reference (complex recipes such as fluids/chemicals/energy/multi-output); null when it cannot be re-encoded. */
   readonly json: Record<string, NbtValue> | null;
 }
 
+/** require_recipes filter: multiple fields are ANDed, multiple values within one field are any-of; omitted fields are unconstrained. */
 interface RecipeFilter {
+  /** Exact recipe id match. */
   readonly id?: string | readonly string[];
+  /** Exact recipe type id match, e.g. "minecraft:smelting". */
   readonly type?: string | readonly string[];
+  /** Machine block id that can process the recipe (its type resolved through recipe_types.json), e.g. "minecraft:furnace". */
   readonly machine?: string | readonly string[];
+  /** Exact key.id match of any input slot's representative (or any option of that slot). */
   readonly input?: string | readonly string[];
+  /** Exact key.id match of any output resource. */
   readonly output?: string | readonly string[];
 }
 
 /**
- * Client-side macro expanded from processing_recipes.json before upload.
- * Fields are combined with AND; arrays within one field use any-of matching.
+ * Client-side precompile macro: before MCP's appliedfactory_execute /
+ * appliedfactory_upload are sent, and before the controller GUI saves, the
+ * client reads appliedscripts/processing_recipes.json (and recipe_types.json),
+ * selects recipes by the filter, and replaces the whole call with a recipe
+ * array literal. This function does not exist at controller runtime; a filter
+ * that matches nothing expands to []; a missing processing_recipes.json or an
+ * invalid filter fails the bundle.
  */
 declare function require_recipes(filter?: RecipeFilter): readonly Recipe[];

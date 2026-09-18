@@ -250,7 +250,10 @@ final class ScriptApi {
         if (delegate instanceof JsBus bus) {
             return FactoryEndpoint.bus(bus.address());
         }
-        throw JsValues.error("target must be a Network or Bus");
+        if (delegate instanceof JsSlot slot) {
+            return FactoryEndpoint.itemSlot(slot.address(), slot.index());
+        }
+        throw JsValues.error("target must be a Network, Bus or Bus slot");
     }
 
     FactoryResourceRef requireResource(Object value) {
@@ -787,6 +790,65 @@ final class JsBus {
     public Object redstone(Object level) {
         return api.busRedstone(address, level);
     }
+
+    /**
+     * A handle to one exact item slot of this bus's target container. The slot
+     * can be used for {@code extract()}, as a transfer target and directly,
+     * bypassing the accessed face's input/output capability filters.
+     */
+    public JsSlot slot(Object rawIndex) {
+        var number = JsValues.number(rawIndex, "bus.slot index");
+        if (!Double.isFinite(number) || number != Math.rint(number)
+                || number < 0 || number > Integer.MAX_VALUE) {
+            throw JsValues.error("bus.slot(index) requires a non-negative integer");
+        }
+        return new JsSlot(api, address, (int) number);
+    }
+}
+
+@JsBridge
+final class JsSlot {
+    private final ScriptApi api;
+    private final com.fulent.appliedfactory.factory.FactoryBusAddress address;
+    private final int index;
+
+    JsSlot(
+            ScriptApi api,
+            com.fulent.appliedfactory.factory.FactoryBusAddress address,
+            int index) {
+        this.api = api;
+        this.address = address;
+        this.index = index;
+    }
+
+    com.fulent.appliedfactory.factory.FactoryBusAddress address() {
+        return address;
+    }
+
+    int index() {
+        return index;
+    }
+
+    @JsProperty
+    public int getIndex() {
+        return index;
+    }
+
+    /** Whether the bus resolves and the target container actually has this slot. */
+    @JsProperty
+    public boolean isExists() {
+        return api.host().busTarget(address)
+                .map(target -> index < target.itemSlotCount())
+                .orElse(false);
+    }
+
+    public Object extract(Object channel, Object key, Object amount) {
+        return api.extractResources(FactoryEndpoint.itemSlot(address, index), channel, key, amount);
+    }
+
+    public Object storage(Object channel) {
+        return api.storage(FactoryEndpoint.itemSlot(address, index), channel);
+    }
 }
 
 @JsBridge
@@ -948,9 +1010,11 @@ final class JsResourceOrigin {
         if (origin.kind() == FactoryResourceOrigin.Kind.ESCROW) {
             return "escrow";
         }
-        return origin.endpoint().kind() == FactoryEndpoint.Kind.NETWORK
-                ? "network"
-                : "bus";
+        return switch (origin.endpoint().kind()) {
+            case NETWORK -> "network";
+            case BUS -> "bus";
+            case SLOT -> "slot";
+        };
     }
 
     @JsProperty
@@ -959,9 +1023,11 @@ final class JsResourceOrigin {
             return null;
         }
         var endpoint = origin.endpoint();
-        return endpoint.kind() == FactoryEndpoint.Kind.NETWORK
-                ? new JsNetwork(api, endpoint.networkSide())
-                : new JsBus(api, endpoint.bus());
+        return switch (endpoint.kind()) {
+            case NETWORK -> new JsNetwork(api, endpoint.networkSide());
+            case BUS -> new JsBus(api, endpoint.bus());
+            case SLOT -> new JsSlot(api, endpoint.bus(), endpoint.slotIndex());
+        };
     }
 }
 

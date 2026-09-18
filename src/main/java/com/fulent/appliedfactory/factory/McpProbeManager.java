@@ -199,10 +199,14 @@ public final class McpProbeManager {
     }
 
     private static String describeEndpoint(FactoryEndpoint endpoint) {
-        return endpoint.kind() == FactoryEndpoint.Kind.NETWORK
-                ? "network(" + endpoint.networkSide().getName() + ")"
-                : "bus@" + endpoint.bus().hostPosition().toShortString()
-                        + " side=" + endpoint.bus().side().getName();
+        return switch (endpoint.kind()) {
+            case NETWORK -> "network(" + endpoint.networkSide().getName() + ")";
+            case BUS -> "bus@" + endpoint.bus().hostPosition().toShortString()
+                    + " side=" + endpoint.bus().side().getName();
+            case SLOT -> "bus@" + endpoint.bus().hostPosition().toShortString()
+                    + " side=" + endpoint.bus().side().getName()
+                    + " slot=" + endpoint.slotIndex();
+        };
     }
 
     @FunctionalInterface

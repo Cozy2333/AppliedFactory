@@ -8,6 +8,8 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.function.Consumer;
 
+import org.lwjgl.glfw.GLFW;
+
 import com.fulent.appliedfactory.mcp.McpClientManager;
 import com.fulent.appliedfactory.mcp.McpToolException;
 import com.fulent.appliedfactory.mcp.ScriptBundler;
@@ -40,11 +42,12 @@ public final class FactoryControllerProgramScreen
     private static final int FILE_ROW_HEIGHT = 19;
     private static final int FILES_FOOTER_HEIGHT = 30;
     private static final int TOOLBAR_STEP = 21;
-    private static final int HEADER_ACTIONS = 6;
+    private static final int HEADER_ACTIONS = 7;
 
     private final List<Button> fileButtons = new ArrayList<>();
     private ScriptEditBox scriptBox;
     private FactoryIconButton logButton;
+    private FactoryIconButton saveButton;
     private FactoryIconButton uploadButton;
     private FactoryIconButton pullButton;
     private FactoryIconButton mcpButton;
@@ -109,6 +112,8 @@ public final class FactoryControllerProgramScreen
                 "gui.appliedfactory.pull_local", ignored -> pullRemoteProgram());
         uploadButton = addTool(toolsX + TOOLBAR_STEP * 5, toolsY, Symbol.UPLOAD,
                 "gui.appliedfactory.upload_precompiled", ignored -> uploadProgram());
+        saveButton = addTool(toolsX + TOOLBAR_STEP * 6, toolsY, Symbol.SAVE,
+                "gui.appliedfactory.save_tooltip", ignored -> saveProgram());
         updateLogButton();
         updateAutoReloadButton();
         initFileTools();
@@ -241,6 +246,30 @@ public final class FactoryControllerProgramScreen
         }
         var path = selectedPath;
         uploadProgram(path, scriptBox.getValue());
+    }
+
+    /**
+     * Writes the editor contents to the selected local file without contacting
+     * the controller; uploading stays on the upload action.
+     */
+    private void saveProgram() {
+        if (selectedPath == null) {
+            setStatus("gui.appliedfactory.local_backup_required", FactoryGuiTheme.ERROR);
+            return;
+        }
+        var source = ControllerProgram.normalizeLineEndings(scriptBox.getValue());
+        scriptBox.setValue(source);
+        if (!ControllerProgram.isWithinLimit(source)) {
+            setStatus("gui.appliedfactory.local_source_too_long", FactoryGuiTheme.ERROR);
+            return;
+        }
+        try {
+            ScriptWorkspaceFiles.write(selectedPath, source);
+            ClientProgramWatcher.get().track(selectedPath);
+            setStatus("gui.appliedfactory.save_local_success", FactoryGuiTheme.SUCCESS, selectedPath);
+        } catch (IOException | IllegalArgumentException exception) {
+            setLiteralStatus("Save failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
+        }
     }
 
     private void uploadProgram(String path, String rawSource) {
@@ -567,6 +596,9 @@ public final class FactoryControllerProgramScreen
         if (uploadButton != null) {
             uploadButton.active = sourceLoaded && selectedPath != null && !uploadPending;
         }
+        if (saveButton != null) {
+            saveButton.active = selectedPath != null;
+        }
         if (pullButton != null) {
             pullButton.active = sourceLoaded && selectedPath == null && !uploadPending;
         }
@@ -593,6 +625,15 @@ public final class FactoryControllerProgramScreen
     private void setLiteralStatus(String value, int color) {
         saveStatus = Component.literal(value);
         saveStatusColor = color;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_S && hasControlDown()) {
+            saveProgram();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override

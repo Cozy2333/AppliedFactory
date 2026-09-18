@@ -169,6 +169,23 @@ const itemContents = furnace.storage("ae2:i");
 
 `extract()` 适合获取该面实际可取出的资源；`storage()` 适合排查机器卡料或观察在途输入。`storage()` 返回的仍是来源句柄，可以 `.to()`，但不建议对其中可能无法从该面取出的资源调用 `pushExactlyInto()`，否则可能一直等待。
 
+### 5.4 单槽句柄 `bus.slot(n)`
+
+`bus.slot(n)` 返回目标容器第 `n` 个物品槽（从 0 开始）的句柄，可绕过所贴面的输入输出限制、直接操作某个槽位：
+
+```ts
+const output = furnaceBus.slot(2);        // 熔炉输出槽
+const ingots = output.extract();          // 只取该槽内的物品
+yield ingots.to(order.network);
+yield someResource.pushExactlyInto(output);
+```
+
+- 索引按目标方块的完整物品栏（`ae2:i`）解析，与总线所贴面无关；熔炉的输入/燃料槽等通常无法从该面取出，但可以通过 `slot()` 直接访问；
+- 槽位句柄只覆盖物品，传入其他 channel 的查询返回空数组；
+- `exists` 表示总线可解析且槽位编号有效；越界或总线被拆除后，相关转移动作会像资源不存在一样保持等待；
+- 作为转移目标时只向该槽位插入；目标槽已满或物品不兼容时保持等待；
+- 由 `slot.extract()` 得到的资源 `origin.kind` 为 `"slot"`，`origin.endpoint` 是该槽位句柄。
+
 ## 6. Action 与资源转移
 
 generator 中的 `yield action` 会在当前 tick 立即尝试一次。成功时继续执行；失败时每 tick 重试，直到成功。`action.now()` 只立即尝试一次并返回该动作的结果，不进入等待调度。

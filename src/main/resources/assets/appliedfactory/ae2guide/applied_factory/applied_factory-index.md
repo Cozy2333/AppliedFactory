@@ -6,13 +6,16 @@ navigation:
 
 # Applied Factory
 
-Applied Factory is an AE2 add-on that turns a **Factory Controller** and its six attached Factory Buses into a programmable processing provider.
+Applied Factory lets you control machines in an AE2 network with TypeScript and register machine processing as AE2 autocraftable processing patterns.
 
-## Getting started
+## Quick start
 
-1. Place a Factory Controller on an AE2 network.
-2. Attach Factory Buses to its faces and point each bus at the machine it should access.
-3. Open the controller, upload a TypeScript program, and let AE2 request the patterns registered by that program.
+1. Place a Factory Controller and connect AE2 cables to the faces it needs.
+2. Attach a Factory Bus to an AE2 cable next to a machine, pointing the bus at the machine.
+3. Open the controller and click **Export Workspace** in the top-right to prepare the script files and the current modpack's recipe data.
+4. Open the controller and select a TypeScript file on the left.
+5. Edit the script and click `↑` to upload.
+6. Check the log; once the script registers patterns successfully, you can start crafting from an AE2 terminal.
 
 ## Guides
 

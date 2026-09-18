@@ -18,7 +18,7 @@ final class FactoryIconButton extends Button {
     enum Symbol {
         UPLOAD("upload"), DOWNLOAD("download"), FOLDER("folder"), CODE("code"),
         LINK("link"), LOG("log"), REFRESH("refresh"), NEW("new"),
-        DELETE("delete"), RENAME("rename"), WORKSPACE(Icon.CRAFT_HAMMER),
+        DELETE("delete"), RENAME("rename"), SAVE("save"), WORKSPACE(Icon.CRAFT_HAMMER),
         PAGE_UP(Icon.S_ARROW_UP), PAGE_DOWN(Icon.S_ARROW_DOWN);
 
         private final ResourceLocation texture;

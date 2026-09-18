@@ -66,8 +66,8 @@ interface ResourceArray extends ReadonlyArray<Resource> {
 }
 
 interface ResourceOrigin {
-  readonly kind: "network" | "bus" | "escrow";
-  readonly endpoint: Network | Bus | null;
+  readonly kind: "network" | "bus" | "slot" | "escrow";
+  readonly endpoint: Network | Bus | Slot | null;
 }
 
 interface TransferAction<TResult> {
@@ -139,6 +139,29 @@ interface Bus {
   redstone(level: number): boolean;
   /** 立即破坏一个方块；失败返回 null，成功返回已写回工具来源的掉落句柄。 */
   break(tool: Resource): ResourceArray | null;
+  /**
+   * 获取目标容器（ae2:i 物品栏）指定编号槽位的句柄，索引从 0 开始，按容器完整物品栏
+   * 解析，不受总线所贴面的输入输出限制。槽位句柄可 extract()/storage()，也可作为
+   * to()/pushExactlyInto() 的目标。索引越界时句柄 exists 为 false，相关操作保持等待。
+   */
+  slot(index: number): Slot;
+}
+
+/** `bus.slot(index)` 返回的单个物品槽句柄；直接操作该槽，绕过所贴面的输入输出能力限制。 */
+interface Slot {
+  /** 容器中的槽位编号，从 0 开始。 */
+  readonly index: number;
+  /** 总线在当前网格中可解析，且目标容器确实拥有该编号槽位。 */
+  readonly exists: boolean;
+
+  /** 与 Bus/Network 同形的查询，但只针对该槽位；槽位仅覆盖 ae2:i 物品。 */
+  extract(): ResourceArray;
+  extract(channel: ResourceChannel): ResourceArray;
+  extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
+  extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
+  /** 只读查询该槽位当前内容；恒返回 ResourceArray。 */
+  storage(): ResourceArray;
+  storage(channel: ResourceChannel): ResourceArray;
 }
 
 interface Network {
@@ -173,7 +196,7 @@ interface Network {
   order(resource: ResourceSpec): CraftingAction;
 }
 
-type ResourceTarget = Network | Bus;
+type ResourceTarget = Network | Bus | Slot;
 
 interface PatternDefinition {
   readonly orderNetwork: NetworkSide;

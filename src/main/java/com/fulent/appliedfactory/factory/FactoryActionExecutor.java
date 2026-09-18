@@ -128,6 +128,11 @@ public final class FactoryActionExecutor {
         var amounts = new LinkedHashMap<AEKey, Long>();
         if (endpoint.kind() == FactoryEndpoint.Kind.NETWORK) {
             collectNetwork(amounts, endpoint);
+        } else if (endpoint.kind() == FactoryEndpoint.Kind.SLOT) {
+            var storage = slotStorage(endpoint, channel);
+            if (storage != null) {
+                collect(storage, amounts);
+            }
         } else {
             var bus = busResolver.resolve(endpoint.bus()).orElse(null);
             if (bus != null) {
@@ -164,6 +169,11 @@ public final class FactoryActionExecutor {
         var amounts = new LinkedHashMap<AEKey, Long>();
         if (endpoint.kind() == FactoryEndpoint.Kind.NETWORK) {
             collectNetwork(amounts, endpoint);
+        } else if (endpoint.kind() == FactoryEndpoint.Kind.SLOT) {
+            var storage = slotStorage(endpoint, channel);
+            if (storage != null) {
+                collect(storage, amounts);
+            }
         } else {
             var bus = busResolver.resolve(endpoint.bus()).orElse(null);
             if (bus != null) {
@@ -632,7 +642,7 @@ public final class FactoryActionExecutor {
             return action.source().endpoint().networkSide();
         }
         if (action.source().endpoint() != null
-                && action.source().endpoint().kind() == FactoryEndpoint.Kind.BUS) {
+                && action.source().endpoint().isBusBacked()) {
             return busRecoverySide.apply(action.source().endpoint().bus());
         }
         if (action.target().kind() == FactoryEndpoint.Kind.NETWORK) {
@@ -659,12 +669,34 @@ public final class FactoryActionExecutor {
                     ? null
                     : new MeStorageAccess(resolved.storage(), resolved.source());
         }
+        if (endpoint.kind() == FactoryEndpoint.Kind.SLOT) {
+            if (!key.getType().equals(AEKeyType.items())) {
+                return null;
+            }
+            var bus = busResolver.resolve(endpoint.bus()).orElse(null);
+            var storage = bus == null ? null : bus.slotStorage(AEKeyType.items(), endpoint.slotIndex());
+            return storage == null ? null : new MeStorageAccess(storage, BUS_SOURCE);
+        }
         var bus = busResolver.resolve(endpoint.bus()).orElse(null);
         if (bus == null) {
             return null;
         }
         var storage = bus.storage(key.getType());
         return storage == null ? null : new MeStorageAccess(storage, BUS_SOURCE);
+    }
+
+    /**
+     * The whole-container storage of one item slot for local queries. Slot
+     * handles address item containers only, so an explicit non-item channel is
+     * empty.
+     */
+    @Nullable
+    private MEStorage slotStorage(FactoryEndpoint endpoint, @Nullable AEKeyType channel) {
+        if (channel != null && !channel.equals(AEKeyType.items())) {
+            return null;
+        }
+        var bus = busResolver.resolve(endpoint.bus()).orElse(null);
+        return bus == null ? null : bus.slotStorage(AEKeyType.items(), endpoint.slotIndex());
     }
 
     private static void collect(MEStorage storage, LinkedHashMap<AEKey, Long> amounts) {
