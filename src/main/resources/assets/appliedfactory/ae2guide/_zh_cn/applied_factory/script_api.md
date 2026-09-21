@@ -184,7 +184,8 @@ yield someResource.pushExactlyInto(output);
 - 槽位句柄只覆盖物品，传入其他 channel 的查询返回空数组；
 - `exists` 表示总线可解析且槽位编号有效；越界或总线被拆除后，相关转移动作会像资源不存在一样保持等待；
 - 作为转移目标时只向该槽位插入；目标槽已满或物品不兼容时保持等待；
-- 由 `slot.extract()` 得到的资源 `origin.kind` 为 `"slot"`，`origin.endpoint` 是该槽位句柄。
+- 由 `slot.extract()` 得到的资源 `origin.kind` 为 `"slot"`，`origin.endpoint` 是该槽位句柄；
+- 游戏中把准星指向工厂总线时，Jade 会以物品图标逐槽列出该容器全部物品槽位（空槽显示为空），WTHIT / The One Probe 则以文本列出；编号与 `slot(n)` 一致。
 
 ## 6. Action 与资源转移
 

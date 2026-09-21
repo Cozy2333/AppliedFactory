@@ -115,12 +115,16 @@ dependencies {
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
     localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
 
+    // Optional Jade integration: the bus HUD lists every item slot with its
+    // icon. Jade is loaded reflectively via its @WailaPlugin scan, so the
+    // reference stays optional at runtime.
+    compileOnly "curse.maven:jade-324717:${jade_file_id}"
+    localRuntime "curse.maven:jade-324717:${jade_file_id}"
+
     // Client-side recipe dump reuses ae2-jei-integration's ingredient-to-stack
     // converters (items/fluids built-in, chemicals via Applied Mekanistics).
     compileOnly "curse.maven:ae2-jei-integration-1074338:${ae2_jei_integration_file_id}"
     localRuntime "curse.maven:ae2-jei-integration-1074338:${ae2_jei_integration_file_id}"
-
-    localRuntime "curse.maven:jade-324717:${jade_file_id}"
 
 }
 

@@ -7,6 +7,7 @@ import com.mojang.logging.LogUtils;
 import com.fulent.appliedfactory.block.FactoryControllerBlock;
 import com.fulent.appliedfactory.blockentity.FactoryControllerBlockEntity;
 import com.fulent.appliedfactory.factory.McpProbeManager;
+import com.fulent.appliedfactory.integration.igtooltip.FactoryBusTooltipProvider;
 import com.fulent.appliedfactory.item.FactoryBusItem;
 import com.fulent.appliedfactory.menu.FactoryControllerProgramMenu;
 import com.fulent.appliedfactory.network.NetworkHandler;
@@ -107,6 +108,7 @@ public final class AppliedFactory {
         modEventBus.addListener(NetworkHandler::register);
         
         FactoryBusPart.registerModels();
+        FactoryBusTooltipProvider.register();
 
         McpProbeManager.register();
     }

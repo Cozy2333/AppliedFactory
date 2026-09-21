@@ -41,6 +41,7 @@ import net.neoforged.neoforge.items.IItemHandler;
 import appeng.api.behaviors.ExternalStorageStrategy;
 import appeng.api.stacks.AEKeyType;
 import appeng.api.storage.MEStorage;
+import appeng.me.storage.ExternalStorageFacade;
 import appeng.parts.automation.StackWorldBehaviors;
 
 /**
@@ -406,7 +407,8 @@ public final class FactoryBusTarget {
             return null;
         }
         var strategy = strategies(serverLevel).get(type);
-        return strategy == null ? null : strategy.createWrapper(true, NO_CHANGE_LISTENER);
+        var wrapper = strategy == null ? null : strategy.createWrapper(true, NO_CHANGE_LISTENER);
+        return wrapper != null ? wrapper : fallbackItemStorage(type, true);
     }
 
     /**
@@ -418,7 +420,7 @@ public final class FactoryBusTarget {
         if (!(level instanceof ServerLevel serverLevel) || !isLoaded()) {
             return Map.of();
         }
-        return createWrappers(strategies(serverLevel), true);
+        return withItemFallback(createWrappers(strategies(serverLevel), true), true);
     }
 
     /**
@@ -435,7 +437,8 @@ public final class FactoryBusTarget {
             return null;
         }
         var strategy = allStrategies(serverLevel).get(type);
-        return strategy == null ? null : strategy.createWrapper(false, NO_CHANGE_LISTENER);
+        var wrapper = strategy == null ? null : strategy.createWrapper(false, NO_CHANGE_LISTENER);
+        return wrapper != null ? wrapper : fallbackItemStorage(type, false);
     }
 
     /** Resolves every whole-container storage in one wrapper pass. */
@@ -443,7 +446,7 @@ public final class FactoryBusTarget {
         if (!(level instanceof ServerLevel serverLevel) || !isLoaded()) {
             return Map.of();
         }
-        return createWrappers(allStrategies(serverLevel), false);
+        return withItemFallback(createWrappers(allStrategies(serverLevel), false), false);
     }
 
     /**
@@ -464,17 +467,27 @@ public final class FactoryBusTarget {
     // ---- Per-slot access ----------------------------------------------------
 
     /**
-     * The target block's whole-container item handler, queried without a face,
-     * or null when the target exposes no item storage. Using the whole
-     * container as context is what lets a slot handle bypass the accessed
-     * face's input/output capability filters.
+     * The target block's whole-container item handler, or null when the target
+     * exposes no item storage. Using the whole container as context is what lets
+     * a slot handle bypass the accessed face's input/output capability filters.
+     *
+     * <p>Tries the null-side capability first, then the accessed face, then a
+     * reflective fallback so machines that never register the item capability
+     * (e.g. Forbidden Arcanus' altar and other Valhelsia machines) still work.</p>
      */
     @Nullable
     public IItemHandler itemHandler() {
         if (!(level instanceof ServerLevel serverLevel) || !isLoaded()) {
             return null;
         }
-        return serverLevel.getCapability(Capabilities.ItemHandler.BLOCK, position, null);
+        var handler = serverLevel.getCapability(Capabilities.ItemHandler.BLOCK, position, null);
+        if (handler == null) {
+            handler = serverLevel.getCapability(Capabilities.ItemHandler.BLOCK, position, targetFace());
+        }
+        if (handler == null) {
+            handler = FactoryItemHandlerResolver.resolve(serverLevel.getBlockEntity(position));
+        }
+        return handler;
     }
 
     /** Number of item slots in the target's whole container, or 0 when unavailable. */
@@ -511,6 +524,44 @@ public final class FactoryBusTarget {
             }
         }
         return Map.copyOf(result);
+    }
+
+    /**
+     * Adds the reflective item-handler fallback to a resolved channel map when
+     * AE2's strategy registry found no item storage on this target.
+     */
+    private Map<AEKeyType, MEStorage> withItemFallback(
+            Map<AEKeyType, MEStorage> wrappers, boolean extractableOnly) {
+        if (wrappers.containsKey(AEKeyType.items())) {
+            return wrappers;
+        }
+        var fallback = fallbackItemStorage(AEKeyType.items(), extractableOnly);
+        if (fallback == null) {
+            return wrappers;
+        }
+        var result = new LinkedHashMap<>(wrappers);
+        result.put(AEKeyType.items(), fallback);
+        return result;
+    }
+
+    /**
+     * Wraps the reflectively resolved item handler as an {@link MEStorage} for
+     * mods that expose an item handler but never register the block capability.
+     * Only the item channel is covered.
+     */
+    @Nullable
+    private MEStorage fallbackItemStorage(AEKeyType type, boolean extractableOnly) {
+        if (!type.equals(AEKeyType.items())) {
+            return null;
+        }
+        var handler = itemHandler();
+        if (handler == null) {
+            return null;
+        }
+        var facade = ExternalStorageFacade.of(handler);
+        facade.setChangeListener(NO_CHANGE_LISTENER);
+        facade.setExtractableOnly(extractableOnly);
+        return facade;
     }
 
     private Map<AEKeyType, ExternalStorageStrategy> strategies(ServerLevel serverLevel) {

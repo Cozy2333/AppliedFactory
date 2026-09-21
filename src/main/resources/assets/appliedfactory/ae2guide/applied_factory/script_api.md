@@ -184,7 +184,8 @@ yield someResource.pushExactlyInto(output);
 - Slot handles cover items only; queries with another channel return an empty array;
 - `exists` means the bus resolves and the slot number is valid; when out of range or after the bus is removed, related transfer actions keep waiting as if the resource did not exist;
 - As a transfer target it inserts only into that slot; it keeps waiting when the slot is full or the item is incompatible;
-- A resource obtained from `slot.extract()` has `origin.kind` of `"slot"`, and `origin.endpoint` is that slot handle.
+- A resource obtained from `slot.extract()` has `origin.kind` of `"slot"`, and `origin.endpoint` is that slot handle;
+- In game, pointing at a Factory Bus makes Jade list every item slot of the container as item icons (empty slots shown as empty), while WTHIT / The One Probe show a text list; the numbering matches `slot(n)`.
 
 ## 6. Actions and resource transfers
 
