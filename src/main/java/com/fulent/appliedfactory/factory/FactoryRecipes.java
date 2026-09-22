@@ -20,12 +20,6 @@ public final class FactoryRecipes {
     private FactoryRecipes() {
     }
 
-    public static boolean isCraftingType(String typeId) {
-        return typeId.equals("minecraft:crafting")
-                || typeId.equals("minecraft:stonecutting")
-                || typeId.equals("minecraft:smithing");
-    }
-
     /**
      * Namespaced id of a recipe type (e.g. {@code minecraft:crafting}). Vanilla
      * {@code RecipeType#toString()} drops the namespace, so look the key up in the

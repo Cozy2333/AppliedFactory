@@ -26,7 +26,11 @@ import appeng.api.stacks.AEKeyType;
 import appeng.api.stacks.AEKeyTypes;
 import appeng.api.stacks.GenericStack;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CollectionTag;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NumericTag;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -111,135 +115,163 @@ final class ScriptApi {
                                 action.source(), result.remaining()));
     }
 
-    /**
-     * Unified extract query: {@code extract(spec)} or
-     * {@code extract(channel?, key?, amount?)}. Always returns a resource array
-     * (possibly empty, never null).
-     */
-    Object extractResources(
-            FactoryEndpoint endpoint,
-            Object rawChannel,
-            Object rawKey,
-            Object rawAmount) {
+    /** Flat partial-key query. Matches never span more than one AE key channel. */
+    Object extractResources(FactoryEndpoint endpoint, Object rawQuery) {
         var origin = FactoryResourceOrigin.endpoint(endpoint);
-        if (JsValues.isNullish(rawChannel)) {
-            return resourceArray(origin, host.availableResources(endpoint));
-        }
-        if (JsValues.isNullish(rawKey) && JsValues.isNullish(rawAmount)
-                && !isString(rawChannel)) {
-            return extractResources(endpoint, origin, extractQuery(rawChannel));
-        }
-        var channel = resolveChannel(JsValues.string(rawChannel));
-        if (JsValues.isNullish(rawKey)) {
-            return resourceArray(origin, host.availableResources(endpoint, channel));
-        }
-        var keyObject = JsValues.object(rawKey, "extract key");
-        var key = channel.loadKeyFromTag(
-                host.registries(),
-                NbtJs.fromObject(keyObject, "key"));
-        if (key == null) {
-            throw JsValues.error(
-                    "Invalid key for AE resource channel " + channel.getId());
-        }
-        // An item query without a component patch matches any variant of that
-        // item id; supplying components keeps the exact-key semantics.
-        var rawComponents = keyObject.hasMember("components")
-                ? keyObject.getMember("components") : null;
-        var ignoreComponents = channel == AEKeyType.items()
-                && (rawComponents == null || rawComponents.isNull());
-        long requested = -1;
-        if (!JsValues.isNullish(rawAmount)) {
-            var number = JsValues.number(rawAmount, "Resource amount");
-            if (!Double.isFinite(number) || number != Math.rint(number)
-                    || Math.abs(number) > 9_007_199_254_740_991D) {
-                throw JsValues.error("Resource amount must be positive or -1");
+        var query = resourceQuery(rawQuery);
+        var snapshot = query.channel() == null
+                ? host.availableResources(endpoint)
+                : host.availableResources(endpoint, query.channel());
+        AEKeyType selectedChannel = query.channel();
+        var matches = new ArrayList<FactoryResource>();
+        for (var resource : snapshot) {
+            var key = resource.key();
+            if (selectedChannel != null && !selectedChannel.equals(key.getType())) {
+                continue;
             }
-            requested = (long) number;
-            if (requested != -1 && requested <= 0) {
-                throw JsValues.error("Resource amount must be positive or -1");
+            if (!query.fields().isEmpty()
+                    && !nbtMatches(key.toTag(host.registries()), query.fields())) {
+                continue;
             }
+            if (query.tag() != null && !isTagged(key, query.tag())) {
+                continue;
+            }
+            if (selectedChannel == null) {
+                selectedChannel = key.getType();
+            }
+            matches.add(new FactoryResource(
+                    key, Math.min(resource.amount(), query.amountLimit())));
         }
-        return extractResources(
-                endpoint, origin, new ExtractQuery(key, requested, ignoreComponents));
+        return resourceArray(origin, matches);
     }
 
-    private Object extractResources(
-            FactoryEndpoint endpoint,
-            FactoryResourceOrigin origin,
-            ExtractQuery query) {
-        var match = host.availableResources(endpoint, query.key().getType()).stream()
-                .filter(resource -> keyMatches(
-                        resource.key(), query.key(), query.ignoreComponents()))
-                .findFirst()
-                .orElse(null);
-        if (match == null || match.amount() <= 0) {
-            return resourceArray(origin, List.of());
+    private ResourceQuery resourceQuery(Object raw) {
+        if (JsValues.isNullish(raw)) {
+            return ResourceQuery.ALL;
         }
-        var amount = query.amount() == -1
-                ? match.amount()
-                : Math.min(match.amount(), query.amount());
-        return resourceArray(origin, List.of(new FactoryResource(match.key(), amount)));
+        var object = JsValues.object(raw, "extract query");
+        AEKeyType channel = null;
+        ResourceLocation tag = null;
+        var amountLimit = Long.MAX_VALUE;
+        var fields = new CompoundTag();
+        for (var field : object.getMemberKeys()) {
+            var value = object.getMember(field);
+            if (value == null || value.isNull()) {
+                continue;
+            }
+            switch (field) {
+                case "channel" -> channel = resolveChannel(
+                        JsValues.string(value, "extract query.channel"));
+                case "amount" -> amountLimit = queryAmount(value);
+                case "$tag" -> {
+                    tag = ResourceLocation.tryParse(
+                            JsValues.string(value, "extract query.$tag"));
+                    if (tag == null) {
+                        throw JsValues.error("extract query.$tag must be a valid resource id");
+                    }
+                }
+                case "options" -> {
+                    // Recipe input metadata, not part of the encoded AE key. Keeping
+                    // it out lets an exported RecipeInput double as an extract query.
+                }
+                default -> {
+                    if (field.startsWith("$")) {
+                        throw JsValues.error("Unknown extract query operator: " + field);
+                    }
+                    fields.put(field, NbtJs.fromValue(value, "extract query." + field));
+                }
+            }
+        }
+        return new ResourceQuery(channel, tag, amountLimit, fields);
     }
 
-    private ExtractQuery extractQuery(Object raw) {
-        var delegate = binder.delegate(raw);
-        if (delegate instanceof JsResourceSpec spec) {
-            return new ExtractQuery(spec.key(), spec.amount(), spec.ignoreComponents());
+    private static long queryAmount(Value value) {
+        var number = JsValues.number(value, "extract query.amount");
+        if (!Double.isFinite(number) || number != Math.rint(number)
+                || number <= 0 || number > 9_007_199_254_740_991D) {
+            throw JsValues.error("extract query.amount must be a positive integer");
         }
-        if (delegate instanceof JsResource resource) {
-            var selected = resource.resource().bundle().getFirst();
-            return new ExtractQuery(selected.key(), selected.amount(), false);
-        }
-        if (raw instanceof Value object && object.hasMembers()
-                && object.hasMember("channel") && object.hasMember("key")
-                && object.hasMember("amount")) {
-            var channel = resolveChannel(JsValues.string(object.getMember("channel")));
-            var keyObject = object.getMember("key");
-            if (keyObject == null || !keyObject.hasMembers()) {
-                throw JsValues.error("extract spec.key must be an object");
-            }
-            var key = channel.loadKeyFromTag(
-                    host.registries(), NbtJs.fromObject(keyObject, "extract spec.key"));
-            if (key == null) {
-                throw JsValues.error(
-                        "extract spec has an invalid key for channel " + channel.getId());
-            }
-            var number = JsValues.number(object.getMember("amount"), "extract spec.amount");
-            if (!Double.isFinite(number) || number != Math.rint(number)
-                    || Math.abs(number) > 9_007_199_254_740_991D
-                    || number != -1 && number <= 0) {
-                throw JsValues.error("extract spec amount must be positive or -1");
-            }
-            var rawComponents = keyObject.hasMember("components")
-                    ? keyObject.getMember("components") : null;
-            var ignoreComponents = channel == AEKeyType.items()
-                    && (rawComponents == null || rawComponents.isNull());
-            return new ExtractQuery(key, (long) number, ignoreComponents);
-        }
-        throw JsValues.error("extract requires a ResourceSpec or a resource channel");
+        return (long) number;
     }
 
-    private static boolean isString(Object value) {
-        return value instanceof String || value instanceof Value guest && guest.isString();
+    private static boolean isTagged(AEKey key, ResourceLocation tagId) {
+        return key.getType().getTagNames()
+                .filter(tag -> tag.location().equals(tagId))
+                .anyMatch(key::isTagged);
     }
 
-    /** Exact key match, or an item-id match when the query omitted the component patch. */
-    private static boolean keyMatches(AEKey candidate, AEKey target, boolean ignoreComponents) {
-        if (candidate.equals(target)) {
+    private static boolean nbtMatches(Tag candidate, Tag query) {
+        if (candidate instanceof CompoundTag candidateCompound
+                && query instanceof CompoundTag queryCompound) {
+            for (var field : queryCompound.getAllKeys()) {
+                var candidateValue = candidateCompound.get(field);
+                if (candidateValue == null
+                        || !nbtMatches(candidateValue, queryCompound.get(field))) {
+                    return false;
+                }
+            }
             return true;
         }
-        return ignoreComponents
-                && candidate instanceof AEItemKey candidateItem
-                && target instanceof AEItemKey targetItem
-                && candidateItem.getId().equals(targetItem.getId());
+        if (candidate instanceof CollectionTag<?> candidateList
+                && query instanceof CollectionTag<?> queryList) {
+            if (candidateList.size() != queryList.size()) {
+                return false;
+            }
+            for (int index = 0; index < queryList.size(); index++) {
+                if (!nbtMatches(candidateList.get(index), queryList.get(index))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (candidate instanceof StringTag candidateString
+                && query instanceof StringTag queryString) {
+            return globMatches(candidateString.getAsString(), queryString.getAsString());
+        }
+        if (candidate instanceof NumericTag candidateNumber
+                && query instanceof NumericTag queryNumber) {
+            return Double.compare(
+                    candidateNumber.getAsDouble(), queryNumber.getAsDouble()) == 0;
+        }
+        return candidate.equals(query);
     }
 
-    private record ExtractQuery(AEKey key, long amount, boolean ignoreComponents) {
-        private ExtractQuery {
-            if (amount != -1 && amount <= 0) {
-                throw JsValues.error("Resource amount must be positive or -1");
+    /** Linear-time glob matcher supporting '*' and '?' without regular expressions. */
+    private static boolean globMatches(String value, String pattern) {
+        int valueIndex = 0;
+        int patternIndex = 0;
+        int starIndex = -1;
+        int starValueIndex = -1;
+        while (valueIndex < value.length()) {
+            if (patternIndex < pattern.length()
+                    && (pattern.charAt(patternIndex) == '?'
+                            || pattern.charAt(patternIndex) == value.charAt(valueIndex))) {
+                valueIndex++;
+                patternIndex++;
+            } else if (patternIndex < pattern.length()
+                    && pattern.charAt(patternIndex) == '*') {
+                starIndex = patternIndex++;
+                starValueIndex = valueIndex;
+            } else if (starIndex >= 0) {
+                patternIndex = starIndex + 1;
+                valueIndex = ++starValueIndex;
+            } else {
+                return false;
             }
         }
+        while (patternIndex < pattern.length() && pattern.charAt(patternIndex) == '*') {
+            patternIndex++;
+        }
+        return patternIndex == pattern.length();
+    }
+
+    private record ResourceQuery(
+            AEKeyType channel,
+            ResourceLocation tag,
+            long amountLimit,
+            CompoundTag fields) {
+        private static final ResourceQuery ALL = new ResourceQuery(
+                null, null, Long.MAX_VALUE, new CompoundTag());
     }
 
     /**
@@ -256,15 +288,9 @@ final class ScriptApi {
         return resourceArray(origin, host.storageContents(endpoint, channel));
     }
 
-    /** Accepts a stack()/item() handle or the exported plain ResourceSpec shape. */
+    /** Accepts a live resource or an exact flat ResourceSpec. */
     FactoryResource resourceSpec(Object raw, String name) {
         var delegate = binder.delegate(raw);
-        if (delegate instanceof JsResourceSpec spec) {
-            if (spec.amount() <= 0) {
-                throw JsValues.error(name + " requires an exact positive resource spec");
-            }
-            return new FactoryResource(spec.key(), spec.amount());
-        }
         if (delegate instanceof JsResource resource) {
             var bundle = resource.resource().bundle();
             if (bundle.size() == 1) {
@@ -273,21 +299,32 @@ final class ScriptApi {
         }
         if (raw instanceof Value object && object.hasMembers() && object.hasMember("channel")) {
             var rawChannel = object.getMember("channel");
-            var rawKey = object.getMember("key");
             var rawAmount = object.getMember("amount");
-            if (rawKey != null && rawKey.hasMembers()
-                    && rawAmount != null && !rawAmount.isNull()) {
+            if (rawAmount != null && !rawAmount.isNull()) {
                 var channel = resolveChannel(JsValues.string(rawChannel));
-                var key = channel.loadKeyFromTag(
-                        host.registries(), NbtJs.fromObject(rawKey, name + ".key"));
-                if (key == null) {
-                    throw JsValues.error(
-                            name + " has an invalid key for channel " + channel.getId());
-                }
                 var amount = JsValues.number(rawAmount, name + ".amount");
                 if (!Double.isFinite(amount) || amount != Math.rint(amount)
                         || amount <= 0 || amount > 9_007_199_254_740_991D) {
                     throw JsValues.error(name + " requires an exact positive resource amount");
+                }
+                var keyTag = new CompoundTag();
+                for (var field : object.getMemberKeys()) {
+                    if (field.equals("channel") || field.equals("amount")
+                            || field.equals("options")) {
+                        continue;
+                    }
+                    if (field.startsWith("$")) {
+                        throw JsValues.error(name + " cannot use query operator " + field);
+                    }
+                    var value = object.getMember(field);
+                    if (value != null && !value.isNull()) {
+                        keyTag.put(field, NbtJs.fromValue(value, name + "." + field));
+                    }
+                }
+                var key = channel.loadKeyFromTag(host.registries(), keyTag);
+                if (key == null) {
+                    throw JsValues.error(
+                            name + " has invalid flat key fields for channel " + channel.getId());
                 }
                 return new FactoryResource(key, (long) amount);
             }
@@ -625,7 +662,7 @@ final class JsGlobals {
         return api.itemNbt(item);
     }
 
-    public JsResourceSpec item(String id, long amount, Object components) {
+    public Object item(String id, long amount, Object components) {
         var resourceId = ResourceLocation.tryParse(id);
         if (resourceId == null) {
             throw JsValues.error("Invalid item id: " + id);
@@ -636,28 +673,41 @@ final class JsGlobals {
         if (componentPatch != null) {
             key.put("components", componentPatch);
         }
-        return spec(AEKeyType.items(), key, amount, componentPatch == null);
+        return spec(AEKeyType.items(), key, amount);
     }
 
-    public JsResourceSpec stack(String channel, Object rawKey, long amount) {
+    public Object stack(String channel, Object rawKey, long amount) {
         var keyObject = JsValues.object(rawKey, "stack key");
         var keyType = ScriptApi.resolveChannel(channel);
         return spec(
                 keyType,
                 NbtJs.fromObject(keyObject, "key"),
-                amount,
-                keyType == AEKeyType.items() && !keyObject.hasMember("components"));
+                amount);
     }
 
-    private JsResourceSpec spec(
-            AEKeyType channel, CompoundTag keyTag, long amount, boolean ignoreComponents) {
+    private Map<String, Object> spec(AEKeyType channel, CompoundTag keyTag, long amount) {
         requireAmount(amount);
         var key = channel.loadKeyFromTag(api.host().registries(), keyTag);
         if (key == null) {
             throw JsValues.error(
                     "Invalid key for AE resource channel " + channel.getId());
         }
-        return new JsResourceSpec(api, key, amount, ignoreComponents);
+        var encoded = NbtJs.toJs(key.toTag(api.host().registries()));
+        if (!(encoded instanceof Map<?, ?> keyFields)) {
+            throw JsValues.error("AE resource keys must encode as an object");
+        }
+        var result = new LinkedHashMap<String, Object>();
+        result.put("channel", channel.getId().toString());
+        for (var entry : keyFields.entrySet()) {
+            var field = String.valueOf(entry.getKey());
+            if (field.equals("channel") || field.equals("amount")
+                    || field.equals("options") || field.startsWith("$")) {
+                throw JsValues.error("AE resource key uses reserved flat field: " + field);
+            }
+            result.put(field, entry.getValue());
+        }
+        result.put("amount", amount);
+        return result;
     }
 
     private List<FactoryResource> specs(Object value, String name) {
@@ -670,10 +720,8 @@ final class JsGlobals {
     }
 
     /**
-     * Accepts either a {@code stack()}/{@code item()} spec handle or a plain
-     * {@code {channel, key, amount}} object literal (the same shape the recipe
-     * reference exports and {@code Recipe.inputs}/{@code Recipe.outputs} use), so
-     * baked recipe globals can be referenced at registration directly.
+     * Accepts a flat {@code {channel, ...keyFields, amount}} object (the same
+     * shape returned by {@code stack()}/{@code item()} and exported recipes).
      */
     private FactoryResource spec(Object raw, String name) {
         return api.resourceSpec(raw, name);
@@ -686,51 +734,9 @@ final class JsGlobals {
     }
 
     private static void requireAmount(long amount) {
-        if (amount != -1 && amount <= 0) {
-            throw JsValues.error("Resource amount must be positive or -1");
+        if (amount <= 0) {
+            throw JsValues.error("Resource amount must be positive");
         }
-    }
-}
-
-@JsBridge
-final class JsResourceSpec {
-    private final ScriptApi api;
-    private final AEKey key;
-    private final long amount;
-    private final boolean ignoreComponents;
-
-    JsResourceSpec(ScriptApi api, AEKey key, long amount, boolean ignoreComponents) {
-        this.api = api;
-        this.key = key;
-        this.amount = amount;
-        this.ignoreComponents = ignoreComponents;
-    }
-
-    AEKey key() {
-        return key;
-    }
-
-    long amount() {
-        return amount;
-    }
-
-    boolean ignoreComponents() {
-        return ignoreComponents;
-    }
-
-    @JsProperty
-    public String getChannel() {
-        return ScriptApi.channel(key);
-    }
-
-    @JsProperty
-    public Object getKey() {
-        return NbtJs.toJs(key.toTag(api.host().registries()));
-    }
-
-    @JsProperty
-    public double getAmount() {
-        return amount;
     }
 }
 
@@ -777,8 +783,8 @@ final class JsNetwork {
         return api.host().isSameNetwork(side, other.side);
     }
 
-    public Object extract(Object channel, Object key, Object amount) {
-        return api.extractResources(FactoryEndpoint.network(side), channel, key, amount);
+    public Object extract(Object query) {
+        return api.extractResources(FactoryEndpoint.network(side), query);
     }
 
     public Object storage(Object channel) {
@@ -861,8 +867,8 @@ final class JsBus {
         return value.toString();
     }
 
-    public Object extract(Object channel, Object key, Object amount) {
-        return api.extractResources(FactoryEndpoint.bus(address), channel, key, amount);
+    public Object extract(Object query) {
+        return api.extractResources(FactoryEndpoint.bus(address), query);
     }
 
     public Object storage(Object channel) {
@@ -946,8 +952,8 @@ final class JsSlot {
                 .orElse(false);
     }
 
-    public Object extract(Object channel, Object key, Object amount) {
-        return api.extractResources(FactoryEndpoint.itemSlot(address, index), channel, key, amount);
+    public Object extract(Object query) {
+        return api.extractResources(FactoryEndpoint.itemSlot(address, index), query);
     }
 
     public Object storage(Object channel) {

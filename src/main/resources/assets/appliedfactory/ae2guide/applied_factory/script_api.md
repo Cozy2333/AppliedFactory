@@ -141,22 +141,31 @@ If a script depends on the target machine type, re-upload the script, or re-enum
 
 ### 5.2 `extract()`: resources extractable from a given face
 
-`Network`, `Bus` and `Slot` accept specs built by `item()` / `stack()` directly, while retaining the generic `extract(channel?, key?, amount?)` form. Every form always returns a `ResourceArray`:
+`Network`, `Bus` and `Slot` provide one flat `extract(query?)` query and always return a `ResourceArray`:
 
 ```ts
-const all = network("north").extract();
-const items = network("north").extract("ae2:i");
-const coal = network("north").extract(item("minecraft:coal", -1));
-const eight = network("north").extract(item("minecraft:iron_ingot", 8));
+const firstChannel = network("north").extract();
+const items = network("north").extract({ channel: "ae2:i" });
+const coal = network("north").extract({ channel: "ae2:i", id: "minecraft:coal" });
+const ingots = network("north").extract({
+  channel: "ae2:i",
+  id: "minecraft:*_ingot",
+  amount: 8,
+});
+const tagged = network("north").extract({
+  channel: "ae2:i",
+  $tag: "c:ingots",
+  amount: 8,
+});
 ```
 
-- Passing only `channel`: returns every extractable resource of that channel;
-- Passing a `ResourceSpec`: queries its channel, key and amount, so the same `item()` / `stack()` value can be reused for patterns, orders and extraction;
-- Adding `key`: returns the resource's full currently extractable amount;
-- Adding `amount`: caps the amount at `min(available, amount)`; omitting it or passing `-1` means as much as possible;
-- For `ae2:i`, a key that omits `components` matches any variant of that item id (components are ignored), so `{ id: "minecraft:paper" }` also finds a renamed paper; supply `components` to match exactly;
+- `channel` is optional but always exact. When omitted, the first matching resource selects the channel and resources from every other channel are silently ignored, so one result never spans channels;
+- `$tag` is optional and matches one exact tag ID. Wildcards are not accepted in tag IDs;
+- Every other field is matched recursively against the AE key's encoded fields. Missing fields are ignored, so `{ id: "minecraft:paper" }` also matches renamed paper;
+- String fields support `*` (any sequence) and `?` (one character) glob wildcards. Regular expressions are not supported;
+- `amount` is a positive integer cap applied independently to each exact resource: every returned entry has `min(available, amount)`. When omitted, each resource keeps its full extractable amount;
 - Returns an empty array when nothing matches;
-- Throws a runtime error when the channel is unregistered or the key cannot be decoded.
+- Throws a runtime error for an unregistered channel, invalid tag ID, invalid amount, or unknown `$` operator.
 
 ### 5.3 `storage()`: whole-target inventory snapshot
 
@@ -236,7 +245,7 @@ AE2 considers a processing task complete once all pattern outputs have returned 
 
 ```ts
 const sword = network("north")
-  .extract("ae2:i", { id: "minecraft:diamond_sword" }, 1)[0];
+  .extract({ channel: "ae2:i", id: "minecraft:diamond_sword", amount: 1 })[0];
 
 if (sword !== undefined) {
   const data = itemNbt(sword); // { id, count, components }
@@ -244,7 +253,7 @@ if (sword !== undefined) {
 }
 ```
 
-`stack(channel, key, amount)` decodes the key with the matching AEKeyType codec and does not interpret fields; `item(id, amount, components?)` is a convenience for item specs, where the third parameter is a 1.21 data component patch. `itemNbt()` accepts `ae2:i` resources only.
+`stack(channel, key, amount)` decodes the key with the matching AEKeyType codec and returns a flat `{ channel, ...keyFields, amount }` spec; `item(id, amount, components?)` is the item convenience form. The returned spec can be reused unchanged by `extract()`, processing patterns, `canOrder()` and `order()`. `channel`, `amount`, `options` and `$`-prefixed names are reserved metadata fields and cannot also be codec key fields. `itemNbt()` accepts `ae2:i` resources only.
 
 `rename()` immediately replaces the old key with the new one in the original source; it returns `null` when resources are insufficient, and a new source handle on success.
 
@@ -258,17 +267,17 @@ go(function* () {
 
   bus.use(true); // sneak empty-handed use of the target
 
-  const blocks = storage.extract("ae2:i", { id: "minecraft:stone" }, 1);
+  const blocks = storage.extract({ channel: "ae2:i", id: "minecraft:stone", amount: 1 });
   if (blocks[0] !== undefined) bus.place(blocks[0], false);
 
-  const tools = storage.extract("ae2:i", { id: "minecraft:diamond_pickaxe" }, 1);
+  const tools = storage.extract({ channel: "ae2:i", id: "minecraft:diamond_pickaxe", amount: 1 });
   if (tools[0] !== undefined) {
     let tool = tools[0];
     let drops, success;
     [tool, drops, success] = bus.break(tool);
   }
 
-  const cobble = storage.extract("ae2:i", { id: "minecraft:cobblestone" }, 16);
+  const cobble = storage.extract({ channel: "ae2:i", id: "minecraft:cobblestone", amount: 16 });
   if (cobble[0] !== undefined) bus.drop(cobble[0]);
 });
 ```
@@ -308,7 +317,9 @@ NBT is converted to JavaScript objects, arrays, strings and numbers. Longs beyon
 
 The same precompile logic is used for MCP probes: inline `code` is treated as a virtual file in the `appliedscripts/` root. So if baked recipes are genuinely needed, leave a reusable baking script so data can be regenerated after the modpack updates.
 
-Each recipe is `{ id, type, inputs, outputs, json }`. Input and output entries have the same shape as `stack()` and can be passed directly to `registerProcessingPattern`. A multi-choice ingredient slot keeps every candidate in `options`, with `key` as the representative used for direct registration.
+Each recipe is `{ id, type, inputs, outputs, json }`. Inputs and outputs use the flat `{ channel, ...keyFields, amount }` shape returned by `stack()` and can be passed directly to `extract()` or `registerProcessingPattern`. A multi-choice ingredient slot uses its own flat fields as the representative and keeps every candidate in `options`.
+
+The workspace exporter omits recipe families that do not make useful processing patterns: vanilla crafting/stonecutting/smithing, Create automatic shaped/shapeless/packing and all mixing, Create Dragons Plus coloring, Mekanism painting/pigment processing, IDs ending in `_as_coloring`, and recipe/type IDs containing `copycat`, `facade`, `camo` or `mimic`.
 
 Filter field values may be a string or an array of strings (any-of):
 
@@ -317,8 +328,8 @@ Filter field values may be a string or an array of strings (any-of):
 | `id` | Exact recipe ID match |
 | `type` | Exact recipe type ID match |
 | `machine` | Machine block ID that can process the type, resolved through `recipe_types.json` |
-| `input` | `key.id` of any input representative or option |
-| `output` | `key.id` of any output resource |
+| `input` | Flat `id` of any input representative or option |
+| `output` | Flat `id` of any output resource |
 
 Multiple fields are ANDed. A zero result expands to `[]`; a missing data file, unknown field or non-literal argument fails the precompile.
 

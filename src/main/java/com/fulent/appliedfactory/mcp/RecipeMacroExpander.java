@@ -8,9 +8,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.jetbrains.annotations.Nullable;
+
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 
@@ -39,7 +39,7 @@ import com.google.gson.JsonParseException;
  * <li>{@code machine} — machine block id that processes the recipe's type,
  * resolved through {@code recipe_types.json};</li>
  * <li>{@code input}/{@code output} — any input/output resource whose
- * {@code key.id} equals the value.</li>
+ * flat {@code id} field equals the value.</li>
  * </ul>
  */
 public final class RecipeMacroExpander {
@@ -137,14 +137,14 @@ public final class RecipeMacroExpander {
             if (!(element instanceof JsonObject resource)) {
                 continue;
             }
-            if (idMatches(values, resource.get("key"))) {
+            if (idMatches(values, resource)) {
                 return true;
             }
             // Input slots may carry an alternatives list; matching any option
             // counts as matching the slot.
             if (resource.get("options") instanceof JsonArray options) {
                 for (var option : options) {
-                    if (option instanceof JsonObject obj && idMatches(values, obj.get("key"))) {
+                    if (option instanceof JsonObject obj && idMatches(values, obj)) {
                         return true;
                     }
                 }
@@ -153,10 +153,9 @@ public final class RecipeMacroExpander {
         return false;
     }
 
-    private static boolean idMatches(List<String> values, @Nullable JsonElement key) {
-        return key instanceof JsonObject obj
-                && obj.has("id") && obj.get("id").isJsonPrimitive()
-                && values.contains(obj.get("id").getAsString());
+    private static boolean idMatches(List<String> values, JsonObject resource) {
+        return resource.has("id") && resource.get("id").isJsonPrimitive()
+                && values.contains(resource.get("id").getAsString());
     }
 
     private static JsonArray loadArray(String name, @Nullable Path baseDir) throws McpToolException {

@@ -36,6 +36,10 @@ final class NbtJs {
         return compoundFrom(new Conversion(), object, name, 0);
     }
 
+    static Tag fromValue(Value value, String name) {
+        return toTag(new Conversion(), value, name, 0);
+    }
+
     private static Object convert(Conversion conversion, Tag tag, int depth) {
         conversion.visit(depth, "read");
         if (tag == null || tag instanceof EndTag) {

@@ -141,22 +141,31 @@ go(function* () {
 
 ### 5.2 `extract()`：可从指定面取出的资源
 
-`Network`、`Bus` 与 `Slot` 都支持直接传入 `item()` / `stack()` 构造的规格，也保留通用的 `extract(channel?, key?, amount?)`，并始终返回 `ResourceArray`：
+`Network`、`Bus` 与 `Slot` 统一使用扁平的 `extract(query?)` 查询，并始终返回 `ResourceArray`：
 
 ```ts
-const all = network("north").extract();
-const items = network("north").extract("ae2:i");
-const coal = network("north").extract(item("minecraft:coal", -1));
-const eight = network("north").extract(item("minecraft:iron_ingot", 8));
+const firstChannel = network("north").extract();
+const items = network("north").extract({ channel: "ae2:i" });
+const coal = network("north").extract({ channel: "ae2:i", id: "minecraft:coal" });
+const ingots = network("north").extract({
+  channel: "ae2:i",
+  id: "minecraft:*_ingot",
+  amount: 8,
+});
+const tagged = network("north").extract({
+  channel: "ae2:i",
+  $tag: "c:ingots",
+  amount: 8,
+});
 ```
 
-- 只传 `channel`：返回该通道的全部可提取资源；
-- 传入 `ResourceSpec`：按规格中的 channel、key 与 amount 查询，因此同一个 `item()` / `stack()` 值可以同时用于样板、订单与提取；
-- 再传 `key`：返回该资源当前全部可提取数量；
-- 再传 `amount`：数量上限为 `min(可用量, amount)`；省略或传 `-1` 表示尽可能多；
-- 对 `ae2:i`，`key` 不传 `components` 时会忽略组件，匹配该物品 id 的任意变体，例如 `{ id: "minecraft:paper" }` 也能找到被改名的纸；需要精确匹配时请显式传 `components`；
+- `channel` 可省略，但填写时只允许精确值。省略后由首个匹配资源确定 channel，其他 channel 的资源会被静默忽略，因此一次结果绝不跨 channel；
+- `$tag` 是可选的精确标签 ID，不支持通配符；
+- 其他字段会与 AE key 编码后的字段递归匹配，缺失字段不参与匹配，因此 `{ id: "minecraft:paper" }` 也能找到被改名的纸；
+- 字符串字段支持 `*`（任意长度）和 `?`（单个字符）通配符，不支持正则表达式；
+- `amount` 必须是正整数，并对每种精确资源独立限额：每个返回项的数量均为 `min(可用量, amount)`；省略时保留每种资源的全部可提取数量；
 - 无匹配资源时返回空数组；
-- channel 未注册或 key 无法解码时抛出运行时错误。
+- channel 未注册、标签 ID 或 amount 无效、使用未知 `$` 操作符时抛出运行时错误。
 
 ### 5.3 `storage()`：目标整体库存快照
 
@@ -236,7 +245,7 @@ AE2 在样板的全部输出回到订单网络后认定加工完成，输出来�
 
 ```ts
 const sword = network("north")
-  .extract("ae2:i", { id: "minecraft:diamond_sword" }, 1)[0];
+  .extract({ channel: "ae2:i", id: "minecraft:diamond_sword", amount: 1 })[0];
 
 if (sword !== undefined) {
   const data = itemNbt(sword); // { id, count, components }
@@ -244,7 +253,7 @@ if (sword !== undefined) {
 }
 ```
 
-`stack(channel, key, amount)` 使用对应 AEKeyType codec 解码 key，不解释字段；`item(id, amount, components?)` 是物品规格的便利函数，第三个参数为 1.21 data component patch。`itemNbt()` 只接受 `ae2:i` 资源。
+`stack(channel, key, amount)` 使用对应 AEKeyType codec 解码 key，并返回扁平的 `{ channel, ...keyFields, amount }` 规格；`item(id, amount, components?)` 是物品便利形式。返回值可原样复用于 `extract()`、加工样板、`canOrder()` 与 `order()`。`channel`、`amount`、`options` 和 `$` 开头的名称是保留元数据字段，不能同时作为 codec key 字段。`itemNbt()` 只接受 `ae2:i` 资源。
 
 `rename()` 会立即在原来源中以新 key 替换旧 key；资源不足返回 `null`，成功时返回新的来源句柄。
 
@@ -258,17 +267,17 @@ go(function* () {
 
   bus.use(true); // 潜行空手使用目标
 
-  const blocks = storage.extract("ae2:i", { id: "minecraft:stone" }, 1);
+  const blocks = storage.extract({ channel: "ae2:i", id: "minecraft:stone", amount: 1 });
   if (blocks[0] !== undefined) bus.place(blocks[0], false);
 
-  const tools = storage.extract("ae2:i", { id: "minecraft:diamond_pickaxe" }, 1);
+  const tools = storage.extract({ channel: "ae2:i", id: "minecraft:diamond_pickaxe", amount: 1 });
   if (tools[0] !== undefined) {
     let tool = tools[0];
     let drops, success;
     [tool, drops, success] = bus.break(tool);
   }
 
-  const cobble = storage.extract("ae2:i", { id: "minecraft:cobblestone" }, 16);
+  const cobble = storage.extract({ channel: "ae2:i", id: "minecraft:cobblestone", amount: 16 });
   if (cobble[0] !== undefined) bus.drop(cobble[0]);
 });
 ```
@@ -308,7 +317,9 @@ NBT 转换为 JavaScript 对象、数组、字符串和数字。超过 JavaScrip
 
 同样的预编译逻辑也用于 MCP 探测：内联 `code` 被视为 `appliedscripts/` 根目录下的虚拟文件。因此如果确实需要烘培配方，请留下可复用的烘培脚本，方便整合包更新后重新生成数据。
 
-每条配方是 `{ id, type, inputs, outputs, json }`。输入输出条目与 `stack()` 同形，可直接用于 `registerProcessingPattern`。多选 ingredient 槽以 `options` 保存全部候选，`key` 是用于直接注册的代表物。
+每条配方是 `{ id, type, inputs, outputs, json }`。输入输出使用与 `stack()` 相同的扁平 `{ channel, ...keyFields, amount }` 结构，可直接传给 `extract()` 或 `registerProcessingPattern`。多选 ingredient 槽以自身扁平字段作为代表物，并在 `options` 中保存全部候选。
+
+工作区导出会跳过不适合作为加工样板的配方族：原版合成、切石与锻造，机械动力自动有序/无序合成、自动打包及全部搅拌，Create Dragons Plus 染色，Mekanism 喷涂与颜料处理，以 `_as_coloring` 结尾的配方，以及配方/类型 ID 中含 `copycat`、`facade`、`camo` 或 `mimic` 的伪装配方。
 
 过滤器字段值可以是字符串或字符串数组（any-of）：
 
@@ -317,8 +328,8 @@ NBT 转换为 JavaScript 对象、数组、字符串和数字。超过 JavaScrip
 | `id` | 配方 ID 精确匹配 |
 | `type` | 配方类型 ID 精确匹配 |
 | `machine` | 经 `recipe_types.json` 反查，可处理该类型的机器方块 ID |
-| `input` | 任一输入代表物或 option 的 `key.id` |
-| `output` | 任一输出资源的 `key.id` |
+| `input` | 任一输入代表物或 option 的扁平 `id` |
+| `output` | 任一输出资源的扁平 `id` |
 
 多个字段之间是 AND。零结果展开为 `[]`；数据文件缺失、未知字段或非字面量参数会使预编译失败。
 

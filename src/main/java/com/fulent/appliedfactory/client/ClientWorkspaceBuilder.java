@@ -19,7 +19,6 @@ import java.util.regex.Matcher;
 import org.jetbrains.annotations.Nullable;
 
 import com.fulent.appliedfactory.AppliedFactory;
-import com.fulent.appliedfactory.factory.FactoryRecipes;
 import com.fulent.appliedfactory.mcp.ScriptBundler;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -252,13 +251,13 @@ public final class ClientWorkspaceBuilder {
             HolderLookup.Provider registries,
             Map<Recipe<?>, ResourceLocation> ids) {
         var typeId = category.getRecipeType().getUid().toString();
-        if (FactoryRecipes.isCraftingType(typeId)) {
+        if (RecipeExportBlacklist.excludesType(typeId)) {
             return;
         }
         var recipeManager = runtime.getRecipeManager();
         for (var recipe : recipeManager.createRecipeLookup(category.getRecipeType()).get().toList()) {
             var id = recipeId(category, recipe, ids);
-            if (id == null) {
+            if (id == null || RecipeExportBlacklist.excludes(typeId, id)) {
                 continue;
             }
             List<JsonObject> inputs;
@@ -278,6 +277,8 @@ public final class ClientWorkspaceBuilder {
                     outputs = flatResources(
                             supplier.getIngredients(RecipeIngredientRole.OUTPUT), registries);
                 }
+            } catch (ReservedFlatFieldException exception) {
+                throw exception;
             } catch (RuntimeException ignored) {
                 continue;
             }
@@ -294,7 +295,7 @@ public final class ClientWorkspaceBuilder {
     }
 
     /**
-     * One {@code {channel, key, amount}} entry per slot, with an
+     * One flat {@code {channel, ...keyFields, amount}} entry per slot, with an
      * {@code options} array of every alternative the slot accepts.
      */
     private static List<JsonObject> resources(
@@ -305,7 +306,7 @@ public final class ClientWorkspaceBuilder {
             var seen = new LinkedHashSet<String>();
             for (var typed : slot.getAllIngredientsList()) {
                 var obj = resource(typed, registries);
-                if (obj == null || !seen.add(obj.get("key").toString())) {
+                if (obj == null || !seen.add(resourceIdentity(obj))) {
                     continue;
                 }
                 options.add(obj);
@@ -331,7 +332,7 @@ public final class ClientWorkspaceBuilder {
         var seen = new LinkedHashSet<String>();
         for (var typed : ingredients) {
             var obj = resource(typed, registries);
-            if (obj == null || !seen.add(obj.get("key").toString())) {
+            if (obj == null || !seen.add(resourceIdentity(obj))) {
                 continue;
             }
             result.add(obj);
@@ -355,11 +356,39 @@ public final class ClientWorkspaceBuilder {
         if (stack == null || stack.amount() <= 0) {
             return null;
         }
+        var encoded = NbtOps.INSTANCE.convertTo(
+                JsonOps.INSTANCE, stack.what().toTag(registries));
+        if (!(encoded instanceof JsonObject keyFields)) {
+            return null;
+        }
         var obj = new JsonObject();
         obj.addProperty("channel", stack.what().getType().getId().toString());
-        obj.add("key", NbtOps.INSTANCE.convertTo(JsonOps.INSTANCE, stack.what().toTag(registries)));
+        for (var entry : keyFields.entrySet()) {
+            var field = entry.getKey();
+            if (field.equals("channel") || field.equals("amount")
+                    || field.equals("options") || field.startsWith("$")) {
+                throw new ReservedFlatFieldException(
+                        "AE resource key uses reserved flat field: " + field);
+            }
+            obj.add(field, entry.getValue());
+        }
         obj.addProperty("amount", stack.amount());
         return obj;
+    }
+
+    private static String resourceIdentity(JsonObject resource) {
+        var identity = resource.deepCopy();
+        identity.remove("amount");
+        identity.remove("options");
+        return identity.toString();
+    }
+
+    private static final class ReservedFlatFieldException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        private ReservedFlatFieldException(String message) {
+            super(message);
+        }
     }
 
     /**
@@ -417,7 +446,7 @@ public final class ClientWorkspaceBuilder {
         var recipeManager = runtime.getRecipeManager();
         for (var category : recipeManager.createRecipeCategoryLookup().get().toList()) {
             var typeId = category.getRecipeType().getUid().toString();
-            if (FactoryRecipes.isCraftingType(typeId)) {
+            if (RecipeExportBlacklist.excludesType(typeId)) {
                 continue;
             }
             var machines = recipeManager.createRecipeCatalystLookup(category.getRecipeType())

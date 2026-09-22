@@ -55,10 +55,10 @@ go(function* () {
       }
     }
     machines.forEach((machine) =>
-      main.extract("appflux:flux", { type: "FE" }).to(machine).now(),
+      main.extract({ channel: "appflux:flux", type: "FE" }).to(machine).now(),
     );
     tanks.forEach((tank) =>
-      main.extract("appmek:chemical", { id: "mekanism:chlorine" }).to(tank).now(),
+      main.extract({ channel: "appmek:chemical", id: "mekanism:chlorine" }).to(tank).now(),
     );
     yield sleep(20);
   }

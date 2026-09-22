@@ -17,7 +17,7 @@ type NbtValue =
   | number
   | boolean
   | readonly NbtValue[]
-  | Readonly<Record<string, NbtValue>>
+  | Readonly<Record<string, NbtValue | undefined>>
   | null;
 type NbtCompound = Readonly<Record<string, NbtValue>>;
 
@@ -26,14 +26,26 @@ type ResourceChannel = string;
 
 type Action = SleepAction | TransferAction<unknown> | CraftingAction;
 
-/** Describes only the AE key and amount to match; not an operable source handle. */
+/** Exact flat AE key used by patterns and crafting orders; also valid as an extract query. */
 interface ResourceSpec {
   /** See channels.json for valid values. */
-  readonly channel: string;
-  /** Decoded directly by that channel's AEKey codec. */
-  readonly key: NbtCompound;
-  /** A positive amount extracts at most that much; `-1` means as much as possible. */
+  readonly channel: ResourceChannel;
+  /** Exact positive amount used by patterns and crafting orders. */
   readonly amount: number;
+  /** All other fields are decoded directly by the selected AEKey codec. */
+  readonly [field: string]: NbtValue | undefined;
+}
+
+/**
+ * Flat partial-key query for extract(). Missing key fields are ignored. String
+ * fields support '*' and '?' globs; channel and $tag are always exact. amount
+ * caps every matched exact resource independently.
+ */
+interface ResourceQuery {
+  readonly channel?: ResourceChannel;
+  readonly amount?: number;
+  readonly $tag?: string;
+  readonly [field: string]: NbtValue | undefined;
 }
 
 interface Resource {
@@ -119,18 +131,9 @@ interface Bus {
   /** Resource channel IDs the target face currently supports for input/output (e.g. "ae2:i", "ae2:f"), independent of contents. */
   readonly channels: readonly string[];
 
-  /**
-   * Unified query: extract(spec) or extract(channel?, key?, amount?). The result
-   * is always a ResourceArray. Returns an empty array when nothing matches,
-   * never null. Omitting amount (or -1) means as much as available; a positive
-   * number caps the result. For ae2:i a key with no component patch matches any
-   * variant of that item id (components are ignored).
-   */
+  /** Flat partial-key query; an omitted channel locks to the first matching channel instead of mixing channels. */
   extract(): ResourceArray;
-  extract(spec: ResourceSpec): ResourceArray;
-  extract(channel: ResourceChannel): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
+  extract(query: ResourceQuery): ResourceArray;
   /**
    * Read-only inventory query: returns the target block's **whole inventory**
    * (every slot, regardless of the bus face, including input slots that cannot
@@ -182,12 +185,9 @@ interface Slot {
   /** The bus resolves on its grid and the target container actually has this slot. */
   readonly exists: boolean;
 
-  /** Same shape as Bus/Network queries, but only for this slot; slots cover ae2:i items only. A key with no component patch matches any variant of that item id. */
+  /** Same flat partial-key query as Bus/Network, but only for this ae2:i slot. */
   extract(): ResourceArray;
-  extract(spec: ResourceSpec): ResourceArray;
-  extract(channel: ResourceChannel): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
+  extract(query: ResourceQuery): ResourceArray;
   /** Read-only query of this slot's current contents; always a ResourceArray. */
   storage(): ResourceArray;
   storage(channel: ResourceChannel): ResourceArray;
@@ -204,18 +204,9 @@ interface Network {
   onChange(callback: () => void): void;
   /** Live check whether two controller faces join the same AE grid; disconnected faces return false. */
   isSameNetwork(other: Network): boolean;
-  /**
-   * Unified query: extract(spec) or extract(channel?, key?, amount?). The result
-   * is always a ResourceArray. Returns an empty array when nothing matches,
-   * never null. Omitting amount (or -1) means as much as available; a positive
-   * number caps the result. For ae2:i a key with no component patch matches any
-   * variant of that item id (components are ignored).
-   */
+  /** Flat partial-key query; an omitted channel locks to the first matching channel instead of mixing channels. */
   extract(): ResourceArray;
-  extract(spec: ResourceSpec): ResourceArray;
-  extract(channel: ResourceChannel): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
+  extract(query: ResourceQuery): ResourceArray;
   /**
    * Read-only inventory query: everything on the network is extractable, so
    * this equals extract(); always a ResourceArray. Accepts a channel filter.
@@ -232,7 +223,7 @@ type ResourceTarget = Network | Bus | Slot;
 
 interface PatternDefinition {
   readonly orderNetwork: NetworkSide;
-  /** stack()/item() handles, or plain {channel, key, amount} objects (same shape as Recipe.inputs/Recipe.outputs, safe to reference directly). */
+  /** Flat specs from stack()/item() or Recipe.inputs/Recipe.outputs. */
   readonly inputs: readonly ResourceSpec[];
   readonly outputs: readonly ResourceSpec[];
 }
@@ -266,13 +257,13 @@ declare function registerProcessingPattern(
  * MCP execution also captures logs as its return. */
 declare function log(message: string): void;
 
-/** Builds an item spec reusable by patterns, crafting orders and extract(spec); components is a 1.21+ data component patch, not a full item save NBT. */
+/** Builds a flat exact item spec reusable by extract(), patterns and crafting orders; components is a 1.21+ data component patch. */
 declare function item(
   id: string,
   amount: number,
   components?: NbtCompound,
 ): ResourceSpec;
-/** The key's structure is fully defined by the matching AEKeyType codec. */
+/** Builds a reusable flat spec; the key object's fields are lifted beside channel and amount. */
 declare function stack(
   channel: ResourceChannel,
   key: NbtCompound,
@@ -314,9 +305,9 @@ interface RecipeFilter {
   readonly type?: string | readonly string[];
   /** Machine block id that can process the recipe (its type resolved through recipe_types.json), e.g. "minecraft:furnace". */
   readonly machine?: string | readonly string[];
-  /** Exact key.id match of any input slot's representative (or any option of that slot). */
+  /** Exact flat id match of any input slot's representative (or any option of that slot). */
   readonly input?: string | readonly string[];
-  /** Exact key.id match of any output resource. */
+  /** Exact flat id match of any output resource. */
   readonly output?: string | readonly string[];
 }
 

@@ -14,7 +14,7 @@ type NbtValue =
   | number
   | boolean
   | readonly NbtValue[]
-  | Readonly<Record<string, NbtValue>>
+  | Readonly<Record<string, NbtValue | undefined>>
   | null;
 type NbtCompound = Readonly<Record<string, NbtValue>>;
 
@@ -23,14 +23,25 @@ type ResourceChannel = string;
 
 type Action = SleepAction | TransferAction<unknown> | CraftingAction;
 
-/** 只描述要匹配的 AE key 和数量，不是可操作的来源句柄。 */
+/** 样板与合成订单使用的精确扁平 AE key；也可直接作为 extract 查询。 */
 interface ResourceSpec {
   /** 取值参考channels.json */
-  readonly channel: string;
-  /** 直接交给该 channel 的 AEKey codec 解码。 */
-  readonly key: NbtCompound;
-  /** 数量为正数表示取到最多这么多资源，或 `-1` 表示尽可能多的资源。 */
+  readonly channel: ResourceChannel;
+  /** 样板与合成订单使用的精确正数数量。 */
   readonly amount: number;
+  /** 其余字段直接交给所选 channel 的 AEKey codec 解码。 */
+  readonly [field: string]: NbtValue | undefined;
+}
+
+/**
+ * extract() 使用的扁平部分 key 查询。缺失的 key 字段不参与匹配；字符串字段支持
+ * `*` 与 `?` 通配，channel 与 $tag 始终精确匹配；amount 分别限制每种精确资源。
+ */
+interface ResourceQuery {
+  readonly channel?: ResourceChannel;
+  readonly amount?: number;
+  readonly $tag?: string;
+  readonly [field: string]: NbtValue | undefined;
 }
 
 interface Resource {
@@ -114,16 +125,9 @@ interface Bus {
   /** 目标面当前支持输入/输出的资源 channel id 列表（如 "ae2:i"、"ae2:f"），不依赖实际库存。 */
   readonly channels: readonly string[];
 
-  /**
-   * 统一查询：extract(spec) 或 extract(channel?, key?, amount?)，恒返回 ResourceArray。
-   * 没有满足条件的资源时返回空数组，绝不返回 null。
-   * amount 省略或 -1 表示尽可能多（当前可用量），正数表示上限封顶。
-   */
+  /** 扁平部分 key 查询；省略 channel 时锁定首个匹配通道，不会混合多个通道。 */
   extract(): ResourceArray;
-  extract(spec: ResourceSpec): ResourceArray;
-  extract(channel: ResourceChannel): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
+  extract(query: ResourceQuery): ResourceArray;
   /**
    * 只读库存查询：返回目标方块**全部库存**（所有槽位，不受总线所贴面的限制，
    * 含取不出的输入槽），恒返回 ResourceArray，无内容时为空数组；可传 channel 过滤。
@@ -167,12 +171,9 @@ interface Slot {
   /** 总线在当前网格中可解析，且目标容器确实拥有该编号槽位。 */
   readonly exists: boolean;
 
-  /** 与 Bus/Network 同形的查询，但只针对该槽位；槽位仅覆盖 ae2:i 物品。 */
+  /** 与 Bus/Network 相同的扁平部分 key 查询，但只针对该 ae2:i 槽位。 */
   extract(): ResourceArray;
-  extract(spec: ResourceSpec): ResourceArray;
-  extract(channel: ResourceChannel): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
+  extract(query: ResourceQuery): ResourceArray;
   /** 只读查询该槽位当前内容；恒返回 ResourceArray。 */
   storage(): ResourceArray;
   storage(channel: ResourceChannel): ResourceArray;
@@ -189,16 +190,9 @@ interface Network {
   onChange(callback: () => void): void;
   /** 实时判断两个控制器面是否连接同一个 AE 网格；未连接面返回 false。 */
   isSameNetwork(other: Network): boolean;
-  /**
-   * 统一查询：extract(spec) 或 extract(channel?, key?, amount?)，恒返回 ResourceArray。
-   * 没有满足条件的资源时返回空数组，绝不返回 null。
-   * amount 省略或 -1 表示尽可能多（当前可用量），正数表示上限封顶。
-   */
+  /** 扁平部分 key 查询；省略 channel 时锁定首个匹配通道，不会混合多个通道。 */
   extract(): ResourceArray;
-  extract(spec: ResourceSpec): ResourceArray;
-  extract(channel: ResourceChannel): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
-  extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
+  extract(query: ResourceQuery): ResourceArray;
   /**
    * 只读库存查询：网络内容全部可取出，等价于 extract()；恒返回 ResourceArray。
    * 可传 channel 过滤。
@@ -215,7 +209,7 @@ type ResourceTarget = Network | Bus | Slot;
 
 interface PatternDefinition {
   readonly orderNetwork: NetworkSide;
-  /** stack()/item() 句柄，或普通 {channel, key, amount} 对象（Recipe.inputs/Recipe.outputs 同形，可直接引用）。 */
+  /** stack()/item() 或 Recipe.inputs/Recipe.outputs 提供的扁平规格。 */
   readonly inputs: readonly ResourceSpec[];
   readonly outputs: readonly ResourceSpec[];
 }
@@ -248,13 +242,13 @@ declare function registerProcessingPattern(
  * 在MCP执行时会抓取日志作为返回 */
 declare function log(message: string): void;
 
-/** 构造可复用于样板、合成订单和 extract(spec) 的物品规格；components 是 1.21+ data component patch，而不是完整物品保存 NBT。 */
+/** 构造可复用于 extract()、样板与合成订单的扁平精确物品规格；components 是 1.21+ data component patch。 */
 declare function item(
   id: string,
   amount: number,
   components?: NbtCompound,
 ): ResourceSpec;
-/** key 的结构完全由对应 AEKeyType codec 定义。 */
+/** 构造可复用的扁平规格；key 对象的字段会提升到 channel 与 amount 同级。 */
 declare function stack(
   channel: ResourceChannel,
   key: NbtCompound,
@@ -295,9 +289,9 @@ interface RecipeFilter {
   readonly type?: string | readonly string[];
   /** 可处理该配方的机器方块 id（经 recipe_types.json 反查其类型），如 "minecraft:furnace"。 */
   readonly machine?: string | readonly string[];
-  /** 任一输入槽的代表物（或该槽任一 option）的 key.id 精确匹配。 */
+  /** 任一输入槽的代表物（或该槽任一 option）的扁平 id 精确匹配。 */
   readonly input?: string | readonly string[];
-  /** 任一输出资源的 key.id 精确匹配。 */
+  /** 任一输出资源的扁平 id 精确匹配。 */
   readonly output?: string | readonly string[];
 }
 
