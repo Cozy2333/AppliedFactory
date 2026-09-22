@@ -112,13 +112,9 @@ final class ScriptApi {
     }
 
     /**
-     * Unified extract query: {@code extract(channel?, key?, amount?)}. Always
-     * returns a
-     * {@link #resourceArray(FactoryResourceOrigin, List)} (possibly empty, never
-     * null).
-     * Omitting {@code amount} (or passing -1) means "as much as available"; a
-     * positive
-     * amount caps the result at that quantity.
+     * Unified extract query: {@code extract(spec)} or
+     * {@code extract(channel?, key?, amount?)}. Always returns a resource array
+     * (possibly empty, never null).
      */
     Object extractResources(
             FactoryEndpoint endpoint,
@@ -129,10 +125,13 @@ final class ScriptApi {
         if (JsValues.isNullish(rawChannel)) {
             return resourceArray(origin, host.availableResources(endpoint));
         }
+        if (JsValues.isNullish(rawKey) && JsValues.isNullish(rawAmount)
+                && !isString(rawChannel)) {
+            return extractResources(endpoint, origin, extractQuery(rawChannel));
+        }
         var channel = resolveChannel(JsValues.string(rawChannel));
-        var snapshot = host.availableResources(endpoint, channel);
         if (JsValues.isNullish(rawKey)) {
-            return resourceArray(origin, snapshot);
+            return resourceArray(origin, host.availableResources(endpoint, channel));
         }
         var keyObject = JsValues.object(rawKey, "extract key");
         var key = channel.loadKeyFromTag(
@@ -148,30 +147,80 @@ final class ScriptApi {
                 ? keyObject.getMember("components") : null;
         var ignoreComponents = channel == AEKeyType.items()
                 && (rawComponents == null || rawComponents.isNull());
-        var match = snapshot.stream()
-                .filter(resource -> keyMatches(resource.key(), key, ignoreComponents))
-                .findFirst()
-                .orElse(null);
-        if (match == null || match.amount() <= 0) {
-            return resourceArray(origin, List.of());
-        }
-        long amount = match.amount();
+        long requested = -1;
         if (!JsValues.isNullish(rawAmount)) {
             var number = JsValues.number(rawAmount, "Resource amount");
             if (!Double.isFinite(number) || number != Math.rint(number)
                     || Math.abs(number) > 9_007_199_254_740_991D) {
                 throw JsValues.error("Resource amount must be positive or -1");
             }
-            var requested = (long) number;
-            if (requested == -1) {
-                // same as omitted: as much as possible
-            } else if (requested <= 0) {
+            requested = (long) number;
+            if (requested != -1 && requested <= 0) {
                 throw JsValues.error("Resource amount must be positive or -1");
-            } else {
-                amount = Math.min(amount, requested);
             }
         }
+        return extractResources(
+                endpoint, origin, new ExtractQuery(key, requested, ignoreComponents));
+    }
+
+    private Object extractResources(
+            FactoryEndpoint endpoint,
+            FactoryResourceOrigin origin,
+            ExtractQuery query) {
+        var match = host.availableResources(endpoint, query.key().getType()).stream()
+                .filter(resource -> keyMatches(
+                        resource.key(), query.key(), query.ignoreComponents()))
+                .findFirst()
+                .orElse(null);
+        if (match == null || match.amount() <= 0) {
+            return resourceArray(origin, List.of());
+        }
+        var amount = query.amount() == -1
+                ? match.amount()
+                : Math.min(match.amount(), query.amount());
         return resourceArray(origin, List.of(new FactoryResource(match.key(), amount)));
+    }
+
+    private ExtractQuery extractQuery(Object raw) {
+        var delegate = binder.delegate(raw);
+        if (delegate instanceof JsResourceSpec spec) {
+            return new ExtractQuery(spec.key(), spec.amount(), spec.ignoreComponents());
+        }
+        if (delegate instanceof JsResource resource) {
+            var selected = resource.resource().bundle().getFirst();
+            return new ExtractQuery(selected.key(), selected.amount(), false);
+        }
+        if (raw instanceof Value object && object.hasMembers()
+                && object.hasMember("channel") && object.hasMember("key")
+                && object.hasMember("amount")) {
+            var channel = resolveChannel(JsValues.string(object.getMember("channel")));
+            var keyObject = object.getMember("key");
+            if (keyObject == null || !keyObject.hasMembers()) {
+                throw JsValues.error("extract spec.key must be an object");
+            }
+            var key = channel.loadKeyFromTag(
+                    host.registries(), NbtJs.fromObject(keyObject, "extract spec.key"));
+            if (key == null) {
+                throw JsValues.error(
+                        "extract spec has an invalid key for channel " + channel.getId());
+            }
+            var number = JsValues.number(object.getMember("amount"), "extract spec.amount");
+            if (!Double.isFinite(number) || number != Math.rint(number)
+                    || Math.abs(number) > 9_007_199_254_740_991D
+                    || number != -1 && number <= 0) {
+                throw JsValues.error("extract spec amount must be positive or -1");
+            }
+            var rawComponents = keyObject.hasMember("components")
+                    ? keyObject.getMember("components") : null;
+            var ignoreComponents = channel == AEKeyType.items()
+                    && (rawComponents == null || rawComponents.isNull());
+            return new ExtractQuery(key, (long) number, ignoreComponents);
+        }
+        throw JsValues.error("extract requires a ResourceSpec or a resource channel");
+    }
+
+    private static boolean isString(Object value) {
+        return value instanceof String || value instanceof Value guest && guest.isString();
     }
 
     /** Exact key match, or an item-id match when the query omitted the component patch. */
@@ -183,6 +232,14 @@ final class ScriptApi {
                 && candidate instanceof AEItemKey candidateItem
                 && target instanceof AEItemKey targetItem
                 && candidateItem.getId().equals(targetItem.getId());
+    }
+
+    private record ExtractQuery(AEKey key, long amount, boolean ignoreComponents) {
+        private ExtractQuery {
+            if (amount != -1 && amount <= 0) {
+                throw JsValues.error("Resource amount must be positive or -1");
+            }
+        }
     }
 
     /**
@@ -494,8 +551,10 @@ final class ScriptApi {
         return switch (value) {
             case "front" -> front;
             case "back" -> front.getOpposite();
-            case "left" -> front.getCounterClockWise();
-            case "right" -> front.getClockWise();
+            // Left/right follow a player standing in front of and looking at
+            // the controller, rather than looking outward from inside it.
+            case "left" -> front.getClockWise();
+            case "right" -> front.getCounterClockWise();
             default -> throw JsValues.error("Invalid network side: " + value);
         };
     }
@@ -577,25 +636,28 @@ final class JsGlobals {
         if (componentPatch != null) {
             key.put("components", componentPatch);
         }
-        return spec(AEKeyType.items(), key, amount);
+        return spec(AEKeyType.items(), key, amount, componentPatch == null);
     }
 
     public JsResourceSpec stack(String channel, Object rawKey, long amount) {
         var keyObject = JsValues.object(rawKey, "stack key");
+        var keyType = ScriptApi.resolveChannel(channel);
         return spec(
-                ScriptApi.resolveChannel(channel),
+                keyType,
                 NbtJs.fromObject(keyObject, "key"),
-                amount);
+                amount,
+                keyType == AEKeyType.items() && !keyObject.hasMember("components"));
     }
 
-    private JsResourceSpec spec(AEKeyType channel, CompoundTag keyTag, long amount) {
+    private JsResourceSpec spec(
+            AEKeyType channel, CompoundTag keyTag, long amount, boolean ignoreComponents) {
         requireAmount(amount);
         var key = channel.loadKeyFromTag(api.host().registries(), keyTag);
         if (key == null) {
             throw JsValues.error(
                     "Invalid key for AE resource channel " + channel.getId());
         }
-        return new JsResourceSpec(api, key, amount);
+        return new JsResourceSpec(api, key, amount, ignoreComponents);
     }
 
     private List<FactoryResource> specs(Object value, String name) {
@@ -635,11 +697,13 @@ final class JsResourceSpec {
     private final ScriptApi api;
     private final AEKey key;
     private final long amount;
+    private final boolean ignoreComponents;
 
-    JsResourceSpec(ScriptApi api, AEKey key, long amount) {
+    JsResourceSpec(ScriptApi api, AEKey key, long amount, boolean ignoreComponents) {
         this.api = api;
         this.key = key;
         this.amount = amount;
+        this.ignoreComponents = ignoreComponents;
     }
 
     AEKey key() {
@@ -648,6 +712,10 @@ final class JsResourceSpec {
 
     long amount() {
         return amount;
+    }
+
+    boolean ignoreComponents() {
+        return ignoreComponents;
     }
 
     @JsProperty

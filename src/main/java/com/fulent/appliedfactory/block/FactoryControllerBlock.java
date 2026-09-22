@@ -10,12 +10,16 @@ import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.RenderShape;
@@ -30,6 +34,7 @@ import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.phys.BlockHitResult;
+import net.neoforged.neoforge.common.Tags;
 import net.neoforged.neoforge.common.extensions.IPlayerExtension;
 
 public final class FactoryControllerBlock extends BaseEntityBlock {
@@ -111,6 +116,49 @@ public final class FactoryControllerBlock extends BaseEntityBlock {
             controller.dropOwnedContents();
         }
         super.onRemove(state, level, pos, newState, movedByPiston);
+    }
+
+    /** Wrenches rotate normally and dismantle while the player is sneaking. */
+    @Override
+    protected ItemInteractionResult useItemOn(
+            ItemStack stack,
+            BlockState state,
+            Level level,
+            BlockPos pos,
+            Player player,
+            InteractionHand hand,
+            BlockHitResult hit) {
+        if (!stack.is(Tags.Items.TOOLS_WRENCH)) {
+            return super.useItemOn(stack, state, level, pos, player, hand, hit);
+        }
+        if (!level.mayInteract(player, pos)) {
+            return ItemInteractionResult.FAIL;
+        }
+        if (level.isClientSide) {
+            return ItemInteractionResult.SUCCESS;
+        }
+        if (player.isShiftKeyDown()) {
+            dismantle((ServerLevel) level, pos, state, player, stack);
+        } else {
+            level.setBlockAndUpdate(pos, state.setValue(
+                    FACING, state.getValue(FACING).getClockWise()));
+            if (level.getBlockEntity(pos) instanceof FactoryControllerBlockEntity controller) {
+                controller.onOrientationChanged();
+            }
+        }
+        return ItemInteractionResult.SUCCESS;
+    }
+
+    private static void dismantle(
+            ServerLevel level,
+            BlockPos pos,
+            BlockState state,
+            Player player,
+            ItemStack wrench) {
+        var blockEntity = level.getBlockEntity(pos);
+        var drops = Block.getDrops(state, level, pos, blockEntity, player, wrench);
+        level.removeBlock(pos, false);
+        drops.forEach(player.getInventory()::placeItemBackInInventory);
     }
 
     // The MVP controller has no visible inventory; every face opens the program editor.

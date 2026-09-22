@@ -79,7 +79,7 @@ Common global entry points:
 
 ### 4.1 Sides and networks
 
-`network(side)` accepts the absolute world directions `up/down/north/south/west/east`, and the directions `front/back/left/right` relative to the controller front. Relative directions are resolved to absolute faces when the handle is created, so `network("front").side` returns the actual world direction. `PatternDefinition.orderNetwork` follows the same rules.
+`network(side)` accepts the absolute world directions `up/down/north/south/west/east`, and the directions `front/back/left/right` relative to the controller front. Left and right use the perspective of a player standing in front and looking at the controller. Relative directions are resolved to absolute faces when the handle is created, so `network("front").side` returns the actual world direction. `PatternDefinition.orderNetwork` follows the same rules.
 
 Do not compare two `Network` wrapper objects with `===`. To compare whether they currently belong to the same AE grid, use:
 
@@ -141,18 +141,17 @@ If a script depends on the target machine type, re-upload the script, or re-enum
 
 ### 5.2 `extract()`: resources extractable from a given face
 
-Both `Network` and `Bus` provide `extract(channel?, key?, amount?)` and always return a `ResourceArray`:
+`Network`, `Bus` and `Slot` accept specs built by `item()` / `stack()` directly, while retaining the generic `extract(channel?, key?, amount?)` form. Every form always returns a `ResourceArray`:
 
 ```ts
 const all = network("north").extract();
 const items = network("north").extract("ae2:i");
-const coal = network("north").extract("ae2:i", { id: "minecraft:coal" });
-const eight = network("north").extract(
-  "ae2:i", { id: "minecraft:iron_ingot" }, 8
-);
+const coal = network("north").extract(item("minecraft:coal", -1));
+const eight = network("north").extract(item("minecraft:iron_ingot", 8));
 ```
 
 - Passing only `channel`: returns every extractable resource of that channel;
+- Passing a `ResourceSpec`: queries its channel, key and amount, so the same `item()` / `stack()` value can be reused for patterns, orders and extraction;
 - Adding `key`: returns the resource's full currently extractable amount;
 - Adding `amount`: caps the amount at `min(available, amount)`; omitting it or passing `-1` means as much as possible;
 - For `ae2:i`, a key that omits `components` matches any variant of that item id (components are ignored), so `{ id: "minecraft:paper" }` also finds a renamed paper; supply `components` to match exactly;

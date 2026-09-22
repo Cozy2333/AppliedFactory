@@ -79,7 +79,7 @@ registerProcessingPattern(
 
 ### 4.1 面与网络
 
-`network(side)` 接受世界绝对方向 `up/down/north/south/west/east`，也接受相对控制器正面的 `front/back/left/right`。相对方向在创建句柄时解析为绝对面，因此 `network("front").side` 返回实际世界方向。`PatternDefinition.orderNetwork` 使用相同规则。
+`network(side)` 接受世界绝对方向 `up/down/north/south/west/east`，也接受相对控制器正面的 `front/back/left/right`。其中左右采用玩家站在正面、看向控制器时的视角。相对方向在创建句柄时解析为绝对面，因此 `network("front").side` 返回实际世界方向。`PatternDefinition.orderNetwork` 使用相同规则。
 
 不要用 `===` 比较两个 `Network` 包装对象。要比较它们当前是否属于同一 AE 网格，请使用：
 
@@ -141,18 +141,17 @@ go(function* () {
 
 ### 5.2 `extract()`：可从指定面取出的资源
 
-`Network` 与 `Bus` 都提供 `extract(channel?, key?, amount?)`，并始终返回 `ResourceArray`：
+`Network`、`Bus` 与 `Slot` 都支持直接传入 `item()` / `stack()` 构造的规格，也保留通用的 `extract(channel?, key?, amount?)`，并始终返回 `ResourceArray`：
 
 ```ts
 const all = network("north").extract();
 const items = network("north").extract("ae2:i");
-const coal = network("north").extract("ae2:i", { id: "minecraft:coal" });
-const eight = network("north").extract(
-  "ae2:i", { id: "minecraft:iron_ingot" }, 8
-);
+const coal = network("north").extract(item("minecraft:coal", -1));
+const eight = network("north").extract(item("minecraft:iron_ingot", 8));
 ```
 
 - 只传 `channel`：返回该通道的全部可提取资源；
+- 传入 `ResourceSpec`：按规格中的 channel、key 与 amount 查询，因此同一个 `item()` / `stack()` 值可以同时用于样板、订单与提取；
 - 再传 `key`：返回该资源当前全部可提取数量；
 - 再传 `amount`：数量上限为 `min(可用量, amount)`；省略或传 `-1` 表示尽可能多；
 - 对 `ae2:i`，`key` 不传 `components` 时会忽略组件，匹配该物品 id 的任意变体，例如 `{ id: "minecraft:paper" }` 也能找到被改名的纸；需要精确匹配时请显式传 `components`；

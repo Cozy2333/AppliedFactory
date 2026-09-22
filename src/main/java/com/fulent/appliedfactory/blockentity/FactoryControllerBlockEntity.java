@@ -591,6 +591,22 @@ public final class FactoryControllerBlockEntity extends BlockEntity
         return getBlockState().getValue(FactoryControllerBlock.FACING);
     }
 
+    /** Restarts orientation-bound script state after a wrench rotation. */
+    public void onOrientationChanged() {
+        if (!(level instanceof ServerLevel)) {
+            return;
+        }
+        if (program != null) {
+            program.discard();
+        }
+        program = null;
+        programInitialized = false;
+        invalidatePatterns();
+        invalidateBusTopology();
+        scheduleProgramInitialization();
+        markChangedAndSync();
+    }
+
     @Override
     public boolean isSameNetwork(Direction first, Direction second) {
         var firstNode = getGridNode(first);

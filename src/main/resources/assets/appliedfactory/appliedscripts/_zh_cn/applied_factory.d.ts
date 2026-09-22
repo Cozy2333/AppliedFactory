@@ -115,11 +115,12 @@ interface Bus {
   readonly channels: readonly string[];
 
   /**
-   * 统一查询：extract(channel?, key?, amount?)，三个参数都可选，恒返回 ResourceArray。
+   * 统一查询：extract(spec) 或 extract(channel?, key?, amount?)，恒返回 ResourceArray。
    * 没有满足条件的资源时返回空数组，绝不返回 null。
    * amount 省略或 -1 表示尽可能多（当前可用量），正数表示上限封顶。
    */
   extract(): ResourceArray;
+  extract(spec: ResourceSpec): ResourceArray;
   extract(channel: ResourceChannel): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
@@ -168,6 +169,7 @@ interface Slot {
 
   /** 与 Bus/Network 同形的查询，但只针对该槽位；槽位仅覆盖 ae2:i 物品。 */
   extract(): ResourceArray;
+  extract(spec: ResourceSpec): ResourceArray;
   extract(channel: ResourceChannel): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
@@ -188,11 +190,12 @@ interface Network {
   /** 实时判断两个控制器面是否连接同一个 AE 网格；未连接面返回 false。 */
   isSameNetwork(other: Network): boolean;
   /**
-   * 统一查询：extract(channel?, key?, amount?)，三个参数都可选，恒返回 ResourceArray。
+   * 统一查询：extract(spec) 或 extract(channel?, key?, amount?)，恒返回 ResourceArray。
    * 没有满足条件的资源时返回空数组，绝不返回 null。
    * amount 省略或 -1 表示尽可能多（当前可用量），正数表示上限封顶。
    */
   extract(): ResourceArray;
+  extract(spec: ResourceSpec): ResourceArray;
   extract(channel: ResourceChannel): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
@@ -217,7 +220,7 @@ interface PatternDefinition {
   readonly outputs: readonly ResourceSpec[];
 }
 
-/** 获取控制器对应面上的网络；front/back/left/right 相对于控制器正面。 */
+/** 获取控制器对应面上的网络；left/right 采用玩家站在正面看向控制器时的视角。 */
 declare function network(side: NetworkSide): Network;
 /** 获得一个SleepAction，可用于yield等待若干刻 */
 declare function sleep(ticks: number): SleepAction;
@@ -245,7 +248,7 @@ declare function registerProcessingPattern(
  * 在MCP执行时会抓取日志作为返回 */
 declare function log(message: string): void;
 
-/** components 是 1.21+ data component patch，而不是完整物品保存 NBT。 */
+/** 构造可复用于样板、合成订单和 extract(spec) 的物品规格；components 是 1.21+ data component patch，而不是完整物品保存 NBT。 */
 declare function item(
   id: string,
   amount: number,

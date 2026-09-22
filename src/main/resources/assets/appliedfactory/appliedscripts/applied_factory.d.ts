@@ -120,13 +120,14 @@ interface Bus {
   readonly channels: readonly string[];
 
   /**
-   * Unified query: extract(channel?, key?, amount?). All three are optional and
-   * the result is always a ResourceArray. Returns an empty array when nothing
-   * matches, never null. Omitting amount (or -1) means as much as available;
-   * a positive number caps the result. For ae2:i a key with no component patch
-   * matches any variant of that item id (components are ignored).
+   * Unified query: extract(spec) or extract(channel?, key?, amount?). The result
+   * is always a ResourceArray. Returns an empty array when nothing matches,
+   * never null. Omitting amount (or -1) means as much as available; a positive
+   * number caps the result. For ae2:i a key with no component patch matches any
+   * variant of that item id (components are ignored).
    */
   extract(): ResourceArray;
+  extract(spec: ResourceSpec): ResourceArray;
   extract(channel: ResourceChannel): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
@@ -183,6 +184,7 @@ interface Slot {
 
   /** Same shape as Bus/Network queries, but only for this slot; slots cover ae2:i items only. A key with no component patch matches any variant of that item id. */
   extract(): ResourceArray;
+  extract(spec: ResourceSpec): ResourceArray;
   extract(channel: ResourceChannel): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
@@ -203,13 +205,14 @@ interface Network {
   /** Live check whether two controller faces join the same AE grid; disconnected faces return false. */
   isSameNetwork(other: Network): boolean;
   /**
-   * Unified query: extract(channel?, key?, amount?). All three are optional and
-   * the result is always a ResourceArray. Returns an empty array when nothing
-   * matches, never null. Omitting amount (or -1) means as much as available;
-   * a positive number caps the result. For ae2:i a key with no component patch
-   * matches any variant of that item id (components are ignored).
+   * Unified query: extract(spec) or extract(channel?, key?, amount?). The result
+   * is always a ResourceArray. Returns an empty array when nothing matches,
+   * never null. Omitting amount (or -1) means as much as available; a positive
+   * number caps the result. For ae2:i a key with no component patch matches any
+   * variant of that item id (components are ignored).
    */
   extract(): ResourceArray;
+  extract(spec: ResourceSpec): ResourceArray;
   extract(channel: ResourceChannel): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound, amount: number): ResourceArray;
@@ -234,7 +237,7 @@ interface PatternDefinition {
   readonly outputs: readonly ResourceSpec[];
 }
 
-/** Gets the network on the controller side; front/back/left/right are relative to the controller front. */
+/** Gets the network on the controller side; left/right use the view of a player facing the controller's front. */
 declare function network(side: NetworkSide): Network;
 /** Returns a SleepAction that can be yielded to wait some ticks. */
 declare function sleep(ticks: number): SleepAction;
@@ -263,7 +266,7 @@ declare function registerProcessingPattern(
  * MCP execution also captures logs as its return. */
 declare function log(message: string): void;
 
-/** components is a 1.21+ data component patch, not a full item save NBT. */
+/** Builds an item spec reusable by patterns, crafting orders and extract(spec); components is a 1.21+ data component patch, not a full item save NBT. */
 declare function item(
   id: string,
   amount: number,
