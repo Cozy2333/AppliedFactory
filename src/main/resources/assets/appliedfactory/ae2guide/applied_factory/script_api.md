@@ -155,6 +155,7 @@ const eight = network("north").extract(
 - Passing only `channel`: returns every extractable resource of that channel;
 - Adding `key`: returns the resource's full currently extractable amount;
 - Adding `amount`: caps the amount at `min(available, amount)`; omitting it or passing `-1` means as much as possible;
+- For `ae2:i`, a key that omits `components` matches any variant of that item id (components are ignored), so `{ id: "minecraft:paper" }` also finds a renamed paper; supply `components` to match exactly;
 - Returns an empty array when nothing matches;
 - Throws a runtime error when the channel is unregistered or the key cannot be decoded.
 
@@ -263,7 +264,9 @@ go(function* () {
 
   const tools = storage.extract("ae2:i", { id: "minecraft:diamond_pickaxe" }, 1);
   if (tools[0] !== undefined) {
-    const drops = bus.break(tools[0]);
+    let tool = tools[0];
+    let drops, success;
+    [tool, drops, success] = bus.break(tool);
   }
 
   const cobble = storage.extract("ae2:i", { id: "minecraft:cobblestone" }, 16);
@@ -271,10 +274,10 @@ go(function* () {
 });
 ```
 
-- `use(item?, shift?)` first tries to right-click the target, then falls back to the item's in-air use;
+- `use(item?, shift?)` first tries to right-click the target, then falls back to the item's in-air use. An item call returns `[current, success]`; on success `current` is the remainder written back to the source (for example the damaged tool), or `null` when fully consumed; failure returns the original handle and `false`;
 - `place(block, shift?)` requires `amount === 1` and a BlockItem resource;
 - `drop(item)` deducts the resource exactly and spawns an item entity along the bus facing;
-- `break(tool)` returns `null` on failure; on success it returns the drop `ResourceArray` written back to the source, or an empty array when there are no drops.
+- `break(tool)` returns `[tool, drops, success]`; on success `tool` is the damaged tool written back to the source (`null` when destroyed) and `drops` is the drop `ResourceArray`; failure returns the original tool, an empty array and `false`.
 
 Item-holding operations extract the exact old key from the handle's source, then write the remainder, container items, damaged tool and drops back to the same source. If a third-party storage rejects the write-back, the result enters recovery escrow and the workflow fails, to avoid duplicating or deleting items.
 

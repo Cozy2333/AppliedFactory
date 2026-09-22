@@ -375,13 +375,40 @@ public final class FactoryControllerProgramScreen
                         ? List.of("code", path)
                         : List.of("xdg-open", path);
             };
-            new ProcessBuilder(command).start();
+            var builder = new ProcessBuilder(command);
+            restoreAppData(builder);
+            builder.start();
             setStatus(vscode
                     ? "gui.appliedfactory.opened_vscode"
                     : "gui.appliedfactory.opened_folder", FactoryGuiTheme.TEXT);
         } catch (IOException | RuntimeException exception) {
             setLiteralStatus("Open failed: " + exception.getMessage(), FactoryGuiTheme.ERROR);
         }
+    }
+
+    /**
+     * Minecraft launchers such as HMCL export {@code APPDATA} pointing at the
+     * launcher folder. VS Code derives its user-data directory from
+     * {@code %APPDATA%\Code}, so the polluted value makes the "Open VS Code"
+     * action start with a fresh, extension-less profile instead of the player's
+     * own. Restore the canonical roaming path when the inherited value does not
+     * live under the (unmodified) user home.
+     */
+    private static void restoreAppData(ProcessBuilder builder) {
+        if (Util.getPlatform() != Util.OS.WINDOWS) {
+            return;
+        }
+        var environment = builder.environment();
+        var home = System.getProperty("user.home");
+        if (home == null || home.isBlank()) {
+            return;
+        }
+        var appData = environment.get("APPDATA");
+        if (appData != null && (appData.startsWith("\\\\")
+                || appData.toLowerCase(Locale.ROOT).startsWith(home.toLowerCase(Locale.ROOT)))) {
+            return;
+        }
+        environment.put("APPDATA", home + "\\AppData\\Roaming");
     }
 
     private void createFile() {

@@ -241,18 +241,22 @@ public final class FactoryActionExecutor {
         return target != null && target.use(shift);
     }
 
-    /** Immediately attempts one item use and writes its remainder to the source. */
-    public boolean use(
+    /**
+     * Immediately attempts one item use and writes its remainder to the source.
+     * Returns the remainder (possibly empty when the item was fully consumed)
+     * written back to the input's origin, or empty when the use did not happen.
+     */
+    public Optional<FactoryResourceRef> use(
             UUID workflowId, FactoryBusAddress bus, FactoryResourceRef input, boolean shift) {
         validateWorkflowOrigin(workflowId, input);
         requireSingleItem(input, false);
         var target = busResolver.resolve(bus).orElse(null);
         if (target == null) {
-            return false;
+            return Optional.empty();
         }
         var extracted = extractExact(workflowId, input);
         if (extracted == null) {
-            return false;
+            return Optional.empty();
         }
         var held = singleItem(extracted);
         FactoryBusTarget.ItemUseResult result;
@@ -266,13 +270,13 @@ public final class FactoryActionExecutor {
         if (!result.successful()) {
             restoreSource(workflowId, input.origin(),
                     recoverySide(input.origin(), bus), extracted);
-            return false;
+            return Optional.empty();
         }
         var remainder = itemResources(List.of(result.remainder()));
         storeAtSourceOrRecover(workflowId, input.origin(),
                 recoverySide(input.origin(), bus), remainder);
         changed.run();
-        return true;
+        return Optional.of(new FactoryResourceRef(input.origin(), remainder));
     }
 
     /** Immediately attempts one block-item placement. */
@@ -308,8 +312,8 @@ public final class FactoryActionExecutor {
         return true;
     }
 
-    /** Immediately breaks one block and writes the damaged tool and drops to its source. */
-    public Optional<FactoryResourceRef> breakBlock(
+    /** Immediately breaks one block and returns the tool remainder and drops written to its source. */
+    public Optional<FactoryBreakResult> breakBlock(
             UUID workflowId, FactoryBusAddress bus, FactoryResourceRef input) {
         validateWorkflowOrigin(workflowId, input);
         requireSingleItem(input, false);
@@ -342,7 +346,9 @@ public final class FactoryActionExecutor {
         storeAtSourceOrRecover(workflowId, input.origin(),
                 recoverySide(input.origin(), bus), produced);
         changed.run();
-        return Optional.of(new FactoryResourceRef(input.origin(), drops));
+        return Optional.of(new FactoryBreakResult(
+                new FactoryResourceRef(input.origin(), tool),
+                new FactoryResourceRef(input.origin(), drops)));
     }
 
     /** Extracts a complete interaction input or returns null without partial progress. */

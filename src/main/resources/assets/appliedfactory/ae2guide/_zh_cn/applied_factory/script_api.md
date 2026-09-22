@@ -155,6 +155,7 @@ const eight = network("north").extract(
 - 只传 `channel`：返回该通道的全部可提取资源；
 - 再传 `key`：返回该资源当前全部可提取数量；
 - 再传 `amount`：数量上限为 `min(可用量, amount)`；省略或传 `-1` 表示尽可能多；
+- 对 `ae2:i`，`key` 不传 `components` 时会忽略组件，匹配该物品 id 的任意变体，例如 `{ id: "minecraft:paper" }` 也能找到被改名的纸；需要精确匹配时请显式传 `components`；
 - 无匹配资源时返回空数组；
 - channel 未注册或 key 无法解码时抛出运行时错误。
 
@@ -263,7 +264,9 @@ go(function* () {
 
   const tools = storage.extract("ae2:i", { id: "minecraft:diamond_pickaxe" }, 1);
   if (tools[0] !== undefined) {
-    const drops = bus.break(tools[0]);
+    let tool = tools[0];
+    let drops, success;
+    [tool, drops, success] = bus.break(tool);
   }
 
   const cobble = storage.extract("ae2:i", { id: "minecraft:cobblestone" }, 16);
@@ -271,10 +274,10 @@ go(function* () {
 });
 ```
 
-- `use(item?, shift?)` 先尝试右键目标，再回退到物品的空中使用；
+- `use(item?, shift?)` 先尝试右键目标，再回退到物品的空中使用。持物调用返回 `[current, success]`；成功时 `current` 是写回来源的剩余物（例如受损的工具），完全消耗时为 `null`；失败时返回原句柄与 `false`；
 - `place(block, shift?)` 要求 `amount === 1` 且资源是 BlockItem；
 - `drop(item)` 精确扣除资源并沿总线朝向生成物品实体；
-- `break(tool)` 失败返回 `null`；成功返回已写回来源的掉落 `ResourceArray`，无掉落时为空数组。
+- `break(tool)` 返回 `[tool, drops, success]`；成功时 `tool` 是写回来源的受损工具（损毁时为 `null`），`drops` 是掉落 `ResourceArray`；失败时返回原工具、空数组与 `false`。
 
 持物操作会从句柄来源精确取出旧 key，再把剩余物、容器物品、受损工具与掉落写回同一来源。第三方存储若拒绝写回，结果进入 recovery escrow，并使 workflow 失败以避免复制或删除物品。
 

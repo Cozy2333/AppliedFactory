@@ -699,7 +699,7 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     }
 
     @Override
-    public boolean use(
+    public Optional<com.fulent.appliedfactory.factory.FactoryResourceRef> use(
             UUID workflowId,
             FactoryBusAddress bus,
             com.fulent.appliedfactory.factory.FactoryResourceRef item,
@@ -717,7 +717,7 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     }
 
     @Override
-    public Optional<com.fulent.appliedfactory.factory.FactoryResourceRef> breakBlock(
+    public Optional<com.fulent.appliedfactory.factory.FactoryBreakResult> breakBlock(
             UUID workflowId,
             FactoryBusAddress bus,
             com.fulent.appliedfactory.factory.FactoryResourceRef tool) {

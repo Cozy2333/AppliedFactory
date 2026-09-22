@@ -142,15 +142,20 @@ final class ScriptApi {
             throw JsValues.error(
                     "Invalid key for AE resource channel " + channel.getId());
         }
-        var available = snapshot.stream()
-                .filter(resource -> resource.key().equals(key))
-                .mapToLong(FactoryResource::amount)
+        // An item query without a component patch matches any variant of that
+        // item id; supplying components keeps the exact-key semantics.
+        var rawComponents = keyObject.hasMember("components")
+                ? keyObject.getMember("components") : null;
+        var ignoreComponents = channel == AEKeyType.items()
+                && (rawComponents == null || rawComponents.isNull());
+        var match = snapshot.stream()
+                .filter(resource -> keyMatches(resource.key(), key, ignoreComponents))
                 .findFirst()
-                .orElse(0L);
-        if (available <= 0) {
+                .orElse(null);
+        if (match == null || match.amount() <= 0) {
             return resourceArray(origin, List.of());
         }
-        long amount = available;
+        long amount = match.amount();
         if (!JsValues.isNullish(rawAmount)) {
             var number = JsValues.number(rawAmount, "Resource amount");
             if (!Double.isFinite(number) || number != Math.rint(number)
@@ -163,10 +168,21 @@ final class ScriptApi {
             } else if (requested <= 0) {
                 throw JsValues.error("Resource amount must be positive or -1");
             } else {
-                amount = Math.min(available, requested);
+                amount = Math.min(amount, requested);
             }
         }
-        return resourceArray(origin, List.of(new FactoryResource(key, amount)));
+        return resourceArray(origin, List.of(new FactoryResource(match.key(), amount)));
+    }
+
+    /** Exact key match, or an item-id match when the query omitted the component patch. */
+    private static boolean keyMatches(AEKey candidate, AEKey target, boolean ignoreComponents) {
+        if (candidate.equals(target)) {
+            return true;
+        }
+        return ignoreComponents
+                && candidate instanceof AEItemKey candidateItem
+                && target instanceof AEItemKey targetItem
+                && candidateItem.getId().equals(targetItem.getId());
     }
 
     /**
@@ -357,7 +373,7 @@ final class ScriptApi {
         return host.dropItem(activeContext.workflowId(), bus, requireItemResource(item));
     }
 
-    boolean useItem(
+    Object useItem(
             com.fulent.appliedfactory.factory.FactoryBusAddress bus, Object item, Object rawShift) {
         requireActiveContext("bus.use(item)");
         var emptyHand = JsValues.isNullish(item) || item instanceof Boolean;
@@ -365,8 +381,19 @@ final class ScriptApi {
         if (emptyHand) {
             return host.use(activeContext.workflowId(), bus, shift);
         }
-        return host.use(
-                activeContext.workflowId(), bus, requireItemResource(item), shift);
+        var input = requireItemResource(item);
+        var outcome = host.use(activeContext.workflowId(), bus, input, shift);
+        if (outcome.isEmpty()) {
+            return binder.wrap(new Object[] { item, false });
+        }
+        return binder.wrap(new Object[] { singleResourceOrNull(outcome.get()), true });
+    }
+
+    private Object singleResourceOrNull(FactoryResourceRef resource) {
+        if (resource.isEmpty()) {
+            return null;
+        }
+        return resourceFacade(resource);
     }
 
     boolean placeItem(
@@ -392,10 +419,19 @@ final class ScriptApi {
     Object breakBlock(
             com.fulent.appliedfactory.factory.FactoryBusAddress bus, Object tool) {
         requireActiveContext("bus.break(tool)");
-        return host.breakBlock(
-                activeContext.workflowId(), bus, requireItemResource(tool))
-                .map(result -> resourceArray(result.origin(), result.bundle()))
-                .orElse(null);
+        var input = requireItemResource(tool);
+        var outcome = host.breakBlock(activeContext.workflowId(), bus, input);
+        if (outcome.isEmpty()) {
+            return binder.wrap(new Object[] {
+                    tool, resourceArray(input.origin(), List.of()), false
+            });
+        }
+        var result = outcome.get();
+        return binder.wrap(new Object[] {
+                singleResourceOrNull(result.tool()),
+                resourceArray(result.drops().origin(), result.drops().bundle()),
+                true
+        });
     }
 
     Object busRedstone(
@@ -769,7 +805,7 @@ final class JsBus {
         return api.dropItem(address, item);
     }
 
-    public boolean use(Object resource, Object shift) {
+    public Object use(Object resource, Object shift) {
         return api.useItem(address, resource, shift);
     }
 

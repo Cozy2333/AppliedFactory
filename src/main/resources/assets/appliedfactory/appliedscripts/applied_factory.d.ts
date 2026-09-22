@@ -70,6 +70,12 @@ interface ResourceArray extends ReadonlyArray<Resource> {
   pushExactlyInto(target: ResourceTarget): TransferAction<boolean>;
 }
 
+/** Current item handle followed by whether the use happened. */
+type ItemUseResult = readonly [current: Resource | null, success: boolean];
+
+/** Current tool, collected drops, and whether the block was broken. */
+type BlockBreakResult = readonly [tool: Resource | null, drops: ResourceArray, success: boolean];
+
 interface ResourceOrigin {
   readonly kind: "network" | "bus" | "slot" | "escrow";
   readonly endpoint: Network | Bus | Slot | null;
@@ -117,7 +123,8 @@ interface Bus {
    * Unified query: extract(channel?, key?, amount?). All three are optional and
    * the result is always a ResourceArray. Returns an empty array when nothing
    * matches, never null. Omitting amount (or -1) means as much as available;
-   * a positive number caps the result.
+   * a positive number caps the result. For ae2:i a key with no component patch
+   * matches any variant of that item id (components are ignored).
    */
   extract(): ResourceArray;
   extract(channel: ResourceChannel): ResourceArray;
@@ -138,16 +145,24 @@ interface Bus {
   /** Immediately uses the target block empty-handed; shift means sneak-use; false when it did not succeed. */
   use(): boolean;
   use(shift: boolean): boolean;
-  /** Immediately uses one item from its source; the result is written back to the same source. */
-  use(item: Resource, shift?: boolean): boolean;
+  /**
+   * Immediately uses one item from its source. Returns [current, success]: on
+   * success current is the remainder written back to the source, or null when
+   * fully consumed; on failure current is the unchanged input handle.
+   */
+  use(item: Resource, shift?: boolean): ItemUseResult;
   /** Immediately places one BlockItem as a block; the remainder is written back to its source. */
   place(block: Resource, shift?: boolean): boolean;
   /** Reads the redstone level the target block emits toward the bus face (0-15); 0 when bus or target cannot resolve. */
   redstone(): number;
   /** Sets the redstone level the bus emits outward from its physical cable face (0-15); false when the bus cannot resolve. */
   redstone(level: number): boolean;
-  /** Immediately breaks one block; null on failure, otherwise the drop handles written back to the tool's source. */
-  break(tool: Resource): ResourceArray | null;
+  /**
+   * Immediately breaks one block. Returns [tool, drops, success]: tool is the
+   * post-break remainder (null when destroyed), drops is always a ResourceArray,
+   * and a failed attempt returns the unchanged input tool and an empty array.
+   */
+  break(tool: Resource): BlockBreakResult;
   /**
    * Gets a handle to the numbered slot of the target container (ae2:i inventory).
    * The index is 0-based and resolved against the container's whole inventory,
@@ -166,7 +181,7 @@ interface Slot {
   /** The bus resolves on its grid and the target container actually has this slot. */
   readonly exists: boolean;
 
-  /** Same shape as Bus/Network queries, but only for this slot; slots cover ae2:i items only. */
+  /** Same shape as Bus/Network queries, but only for this slot; slots cover ae2:i items only. A key with no component patch matches any variant of that item id. */
   extract(): ResourceArray;
   extract(channel: ResourceChannel): ResourceArray;
   extract(channel: ResourceChannel, key: NbtCompound): ResourceArray;
@@ -191,7 +206,8 @@ interface Network {
    * Unified query: extract(channel?, key?, amount?). All three are optional and
    * the result is always a ResourceArray. Returns an empty array when nothing
    * matches, never null. Omitting amount (or -1) means as much as available;
-   * a positive number caps the result.
+   * a positive number caps the result. For ae2:i a key with no component patch
+   * matches any variant of that item id (components are ignored).
    */
   extract(): ResourceArray;
   extract(channel: ResourceChannel): ResourceArray;

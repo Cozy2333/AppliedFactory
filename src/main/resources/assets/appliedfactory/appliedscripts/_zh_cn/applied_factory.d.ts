@@ -65,6 +65,12 @@ interface ResourceArray extends ReadonlyArray<Resource> {
   pushExactlyInto(target: ResourceTarget): TransferAction<boolean>;
 }
 
+/** 当前物品句柄，以及本次使用是否成功。 */
+type ItemUseResult = readonly [current: Resource | null, success: boolean];
+
+/** 当前工具、收集到的掉落，以及本次破坏是否成功。 */
+type BlockBreakResult = readonly [tool: Resource | null, drops: ResourceArray, success: boolean];
+
 interface ResourceOrigin {
   readonly kind: "network" | "bus" | "slot" | "escrow";
   readonly endpoint: Network | Bus | Slot | null;
@@ -129,16 +135,22 @@ interface Bus {
   /** 立即空手使用目标方块；shift 表示潜行使用；本次未成功时返回 false。 */
   use(): boolean;
   use(shift: boolean): boolean;
-  /** 立即使用来源中的一个物品；结果物品直接写回同一来源。 */
-  use(item: Resource, shift?: boolean): boolean;
+  /**
+   * 立即使用来源中的一个物品，返回 [current, success]。成功时 current 是写回来源的
+   * 剩余物，完全耗尽时为 null；失败时 current 保持为原输入句柄。
+   */
+  use(item: Resource, shift?: boolean): ItemUseResult;
   /** 立即使用一个 BlockItem 放置方块；剩余物直接写回来源。 */
   place(block: Resource, shift?: boolean): boolean;
   /** 读取目标方块向总线面输出的红石等级（0-15）；总线或目标不可解析时为 0。 */
   redstone(): number;
   /** 设置总线从物理线缆面向外输出的红石等级（0-15）；总线不可解析时返回 false。 */
   redstone(level: number): boolean;
-  /** 立即破坏一个方块；失败返回 null，成功返回已写回工具来源的掉落句柄。 */
-  break(tool: Resource): ResourceArray | null;
+  /**
+   * 立即破坏一个方块，返回 [tool, drops, success]。tool 是破坏后的工具（损毁时为
+   * null），drops 恒为 ResourceArray；失败时返回原工具和空数组。
+   */
+  break(tool: Resource): BlockBreakResult;
   /**
    * 获取目标容器（ae2:i 物品栏）指定编号槽位的句柄，索引从 0 开始，按容器完整物品栏
    * 解析，不受总线所贴面的输入输出限制。槽位句柄可 extract()/storage()，也可作为

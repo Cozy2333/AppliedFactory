@@ -101,13 +101,15 @@ public final class FactoryProgram {
 
         boolean use(UUID workflowId, FactoryBusAddress bus, boolean shift);
 
-        boolean use(
+        /** Returns the post-use remainder written back to the item's origin, or empty on failure. */
+        Optional<FactoryResourceRef> use(
                 UUID workflowId, FactoryBusAddress bus, FactoryResourceRef item, boolean shift);
 
         boolean place(
                 UUID workflowId, FactoryBusAddress bus, FactoryResourceRef block, boolean shift);
 
-        Optional<FactoryResourceRef> breakBlock(
+        /** Returns the post-break tool and drops written back to their shared origin. */
+        Optional<FactoryBreakResult> breakBlock(
                 UUID workflowId, FactoryBusAddress bus, FactoryResourceRef tool);
 
         /**

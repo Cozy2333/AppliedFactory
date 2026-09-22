@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.fulent.appliedfactory.blockentity.FactoryControllerBlockEntity;
+import com.fulent.appliedfactory.factory.FactoryBreakResult;
 import com.fulent.appliedfactory.factory.FactoryBusAddress;
 import com.fulent.appliedfactory.factory.FactoryBusTarget;
 import com.fulent.appliedfactory.factory.FactoryCraftingAction;
@@ -172,7 +173,7 @@ public final class McpProbeHost implements FactoryProgram.Host {
     }
 
     @Override
-    public boolean use(
+    public Optional<FactoryResourceRef> use(
             UUID workflowId, FactoryBusAddress bus, FactoryResourceRef item, boolean shift) {
         return controller.use(workflowId, bus, item, shift);
     }
@@ -184,7 +185,7 @@ public final class McpProbeHost implements FactoryProgram.Host {
     }
 
     @Override
-    public Optional<FactoryResourceRef> breakBlock(
+    public Optional<FactoryBreakResult> breakBlock(
             UUID workflowId, FactoryBusAddress bus, FactoryResourceRef tool) {
         return controller.breakBlock(workflowId, bus, tool);
     }
