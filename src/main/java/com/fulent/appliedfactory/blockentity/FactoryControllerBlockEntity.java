@@ -40,7 +40,6 @@ import com.fulent.appliedfactory.script.ProgramLoadResult;
 import com.fulent.appliedfactory.script.ScriptHandlerRef;
 
 import appeng.api.config.Actionable;
-import appeng.api.config.PowerMultiplier;
 import appeng.api.crafting.IPatternDetails;
 import appeng.api.crafting.PatternDetailsHelper;
 import appeng.api.implementations.IPowerChannelState;
@@ -54,13 +53,14 @@ import appeng.api.networking.IManagedGridNode;
 import appeng.api.networking.crafting.ICraftingProvider;
 import appeng.api.networking.crafting.ICraftingLink;
 import appeng.api.networking.crafting.ICraftingRequester;
-import appeng.api.networking.energy.IEnergyService;
 import appeng.api.networking.security.IActionHost;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.stacks.AEKey;
 import appeng.api.stacks.AEKeyType;
 import appeng.api.stacks.KeyCounter;
 import appeng.api.util.AECableType;
+import appeng.me.energy.IEnergyOverlayGridConnection;
+import appeng.me.service.EnergyService;
 import com.google.common.collect.ImmutableSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -87,8 +87,6 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class FactoryControllerBlockEntity extends BlockEntity
         implements IGridNodeListener<FactoryControllerBlockEntity>,
         IInWorldGridNodeHost, IPowerChannelState, FactoryProgram.Host {
-    private static final double MAX_POWER_TRANSFER_PER_NETWORK = 1_024.0D;
-    private static final double POWER_EPSILON = 0.0001D;
     private static final int PROGRAM_STARTUP_QUIET_TICKS = 20;
     private static final String ESCROW_NBT_KEY = "FactoryEscrow";
     /** Persistent key is "ErrorSubscribers" for legacy saves; the set now means log subscribers. */
@@ -147,6 +145,8 @@ public final class FactoryControllerBlockEntity extends BlockEntity
                     .setIdlePowerUsage(1.0D)
                     .setTagName("network_" + direction.getName())
                     .setVisualRepresentation(Items.IRON_INGOT)
+                    .addService(IEnergyOverlayGridConnection.class,
+                            () -> connectedEnergyServices(direction))
                     .addService(ICraftingProvider.class, attachment)
                     .addService(ICraftingRequester.class, attachment));
         }
@@ -313,7 +313,7 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     @Override
     public void onStateChanged(
             FactoryControllerBlockEntity owner, IGridNode node, State state) {
-        onControllerNodeTopologyChanged(node);
+        queueControllerNodeEvent(node);
         invalidatePatterns();
     }
 
@@ -801,8 +801,14 @@ public final class FactoryControllerBlockEntity extends BlockEntity
         setChanged();
     }
 
-    /** Queues the face owned by this controller node for the next script step. */
+    /** Grid membership changes also change AE2's shared energy-service graph. */
     public void onControllerNodeTopologyChanged(IGridNode changedNode) {
+        invalidatePowerOverlay();
+        queueControllerNodeEvent(changedNode);
+    }
+
+    /** Queues the face owned by this controller node for the next script step. */
+    private void queueControllerNodeEvent(IGridNode changedNode) {
         var affected = EnumSet.noneOf(Direction.class);
         for (var entry : networkNodes.entrySet()) {
             if (entry.getValue().getNode() == changedNode) {
@@ -832,6 +838,34 @@ public final class FactoryControllerBlockEntity extends BlockEntity
             affected.forEach(program::markEnvironmentChanged);
         } else if (!programInitialized) {
             scheduleProgramInitialization();
+        }
+    }
+
+    /** AE2's quartz-fiber overlay shares energy across these nodes without joining their grids. */
+    private List<EnergyService> connectedEnergyServices(Direction side) {
+        var ownGrid = networkNodes.get(side).getGrid();
+        if (ownGrid == null) {
+            return List.of();
+        }
+        var seen = Collections.newSetFromMap(new IdentityHashMap<IGrid, Boolean>());
+        seen.add(ownGrid);
+        var connected = new ArrayList<EnergyService>();
+        for (var node : networkNodes.values()) {
+            var grid = node.getGrid();
+            if (grid != null && seen.add(grid)) {
+                connected.add((EnergyService) grid.getEnergyService());
+            }
+        }
+        return connected;
+    }
+
+    private void invalidatePowerOverlay() {
+        var seen = Collections.newSetFromMap(new IdentityHashMap<IGrid, Boolean>());
+        for (var node : networkNodes.values()) {
+            var grid = node.getGrid();
+            if (grid != null && seen.add(grid)) {
+                ((EnergyService) grid.getEnergyService()).invalidateOverlayEnergyGrid();
+            }
         }
     }
 
@@ -1021,8 +1055,6 @@ public final class FactoryControllerBlockEntity extends BlockEntity
             BlockState state,
             FactoryControllerBlockEntity controller) {
         if (!level.isClientSide) {
-            // 为子网供电
-            controller.bridgePowerBetweenNetworks();
             if (controller.isPowered()) {
                 controller.poweredWorkTicks++;
                 controller.initializeProgramWhenReady();
@@ -1077,74 +1109,6 @@ public final class FactoryControllerBlockEntity extends BlockEntity
         }
     }
 
-    private void bridgePowerBetweenNetworks() {
-        var seenGrids = Collections.newSetFromMap(new IdentityHashMap<IGrid, Boolean>());
-        var networks = new ArrayList<EnergyNetwork>();
-        for (var node : networkNodes.values()) {
-            var grid = node.getGrid();
-            if (grid != null && seenGrids.add(grid)) {
-                var energy = grid.getEnergyService();
-                networks.add(new EnergyNetwork(
-                        energy,
-                        Math.max(0.0D, energy.getStoredPower()),
-                        Math.max(0.0D,
-                                energy.getEnergyDemand(MAX_POWER_TRANSFER_PER_NETWORK))));
-            }
-        }
-        if (networks.size() < 2) {
-            return;
-        }
-        var donors = networks.stream()
-                .sorted(Comparator.comparingDouble(EnergyNetwork::stored).reversed())
-                .toList();
-        var receivers = networks.stream()
-                .filter(network -> network.demand() > POWER_EPSILON)
-                .sorted(Comparator.comparingDouble(EnergyNetwork::stored))
-                .toList();
-        var budgets = new IdentityHashMap<IEnergyService, Double>();
-        for (var donor : donors) {
-            var reserve = donor.service.getIdlePowerUsage() * 4.0D + 1.0D;
-            budgets.put(donor.service, Math.max(0.0D,
-                    Math.min(MAX_POWER_TRANSFER_PER_NETWORK, donor.stored - reserve)));
-        }
-        for (var receiver : receivers) {
-            var demand = Math.min(receiver.demand, MAX_POWER_TRANSFER_PER_NETWORK);
-            for (var donor : donors) {
-                if (demand <= POWER_EPSILON) {
-                    break;
-                }
-                if (donor.service == receiver.service
-                        || donor.stored <= receiver.stored + POWER_EPSILON) {
-                    continue;
-                }
-                var budget = budgets.getOrDefault(donor.service, 0.0D);
-                if (budget <= POWER_EPSILON) {
-                    continue;
-                }
-                var requested = Math.min(demand, budget);
-                var extractable = donor.service.extractAEPower(
-                        requested, Actionable.SIMULATE, PowerMultiplier.ONE);
-                if (extractable <= POWER_EPSILON) {
-                    continue;
-                }
-                var accepted = extractable - receiver.service.injectPower(
-                        extractable, Actionable.SIMULATE);
-                if (accepted <= POWER_EPSILON) {
-                    continue;
-                }
-                var extracted = donor.service.extractAEPower(
-                        accepted, Actionable.MODULATE, PowerMultiplier.ONE);
-                var overflow = receiver.service.injectPower(extracted, Actionable.MODULATE);
-                var delivered = extracted - overflow;
-                if (overflow > POWER_EPSILON) {
-                    donor.service.injectPower(overflow, Actionable.MODULATE);
-                }
-                demand -= delivered;
-                budgets.put(donor.service, Math.max(0.0D, budget - delivered));
-            }
-        }
-    }
-
     /** Materializes every hidden escrow resource. */
     public void dropOwnedContents() {
         if (level == null || level.isClientSide) {
@@ -1172,9 +1136,6 @@ public final class FactoryControllerBlockEntity extends BlockEntity
 
     private record OfferedPattern(
             IPatternDetails details, Direction orderNetwork, ScriptHandlerRef handler) {
-    }
-
-    private record EnergyNetwork(IEnergyService service, double stored, double demand) {
     }
 
     private record BusTopology(

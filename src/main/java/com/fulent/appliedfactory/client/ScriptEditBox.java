@@ -5,12 +5,14 @@ import java.util.List;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.fulent.appliedfactory.mixin.MultilineTextFieldAccessor;
+import org.lwjgl.glfw.GLFW;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.Whence;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
@@ -45,6 +47,9 @@ final class ScriptEditBox extends MultiLineEditBox {
     private boolean editable = true;
     private boolean adjustingGutter;
     private long caretFocusedAt;
+    /** At a soft wrap, both adjacent display rows share one text index. */
+    private int preferredCaretLine = -1;
+    private int preferredCaretIndex = -1;
 
     ScriptEditBox(Font font, int x, int y, int width, int height,
             Component placeholder, Component message) {
@@ -71,6 +76,7 @@ final class ScriptEditBox extends MultiLineEditBox {
         if (adjustingGutter) {
             return;
         }
+        preferredCaretLine = -1;
         updateGutter(value);
         rebuildDisplayLines(value);
         rebuildLineNumbers(value);
@@ -173,14 +179,7 @@ final class ScriptEditBox extends MultiLineEditBox {
     protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         var value = getValue();
         var cursor = textField.cursor();
-        var cursorLine = 0;
-        for (int index = 0; index < displayLines.size(); index++) {
-            var line = displayLines.get(index);
-            if (cursor >= line.begin() && cursor <= line.end()) {
-                cursorLine = index;
-                break;
-            }
-        }
+        var cursorLine = caretLine(cursor);
         var drawCaret = editable && isFocused()
                 && (net.minecraft.Util.getMillis() - caretFocusedAt) / 300L % 2L == 0L;
         var hasSelection = textField.hasSelection();
@@ -281,6 +280,68 @@ final class ScriptEditBox extends MultiLineEditBox {
     }
 
     @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        var wasInText = button == 0 && withinContentAreaPoint(mouseX, mouseY);
+        var oldScroll = scrollAmount();
+        var handled = super.mouseClicked(mouseX, mouseY, button);
+        if (handled && wasInText) {
+            preferPointerLine(mouseY, oldScroll);
+            setScrollAmount(oldScroll);
+        }
+        return handled;
+    }
+
+    @Override
+    public boolean mouseDragged(
+            double mouseX, double mouseY, int button, double dragX, double dragY) {
+        var wasInText = button == 0 && withinContentAreaPoint(mouseX, mouseY);
+        var oldScroll = scrollAmount();
+        var handled = super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+        if (handled && wasInText) {
+            preferPointerLine(mouseY, oldScroll);
+            setScrollAmount(oldScroll);
+        }
+        return handled;
+    }
+
+    private void preferPointerLine(double mouseY, double scroll) {
+        var row = Mth.clamp(Mth.floor(
+                (mouseY - getY() - innerPadding() + scroll) / LINE_HEIGHT),
+                0, displayLines.size() - 1);
+        preferCaretLine(row);
+    }
+
+    private int caretLine(int cursor) {
+        if (preferredCaretIndex == cursor && preferredCaretLine >= 0
+                && preferredCaretLine < displayLines.size()) {
+            var line = displayLines.get(preferredCaretLine);
+            if (cursor >= line.begin() && cursor <= line.end()) {
+                return preferredCaretLine;
+            }
+        }
+        for (int index = 0; index < displayLines.size(); index++) {
+            var line = displayLines.get(index);
+            if (cursor >= line.begin() && cursor <= line.end()) {
+                return index;
+            }
+        }
+        return 0;
+    }
+
+    private void preferCaretLine(int row) {
+        preferredCaretLine = row;
+        preferredCaretIndex = textField.cursor();
+        var top = row * LINE_HEIGHT;
+        var bottom = top + LINE_HEIGHT;
+        var visibleHeight = getHeight() - totalInnerPadding();
+        if (top < scrollAmount()) {
+            setScrollAmount(top);
+        } else if (bottom > scrollAmount() + visibleHeight) {
+            setScrollAmount(bottom - visibleHeight);
+        }
+    }
+
+    @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (!editable) {
             return false;
@@ -290,7 +351,49 @@ final class ScriptEditBox extends MultiLineEditBox {
         if (Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) {
             return true;
         }
+        if (!Screen.hasControlDown() && handleVisualCaretKey(keyCode)) {
+            return true;
+        }
+        preferredCaretLine = -1;
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private boolean handleVisualCaretKey(int keyCode) {
+        var cursor = textField.cursor();
+        var row = caretLine(cursor);
+        var line = displayLines.get(row);
+        if (keyCode == GLFW.GLFW_KEY_RIGHT && cursor == line.end()
+                && row + 1 < displayLines.size()
+                && displayLines.get(row + 1).begin() == cursor) {
+            moveCaret(cursor, row + 1);
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_LEFT && cursor == line.begin()
+                && row > 0 && displayLines.get(row - 1).end() == cursor) {
+            moveCaret(cursor, row - 1);
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_HOME || keyCode == GLFW.GLFW_KEY_END) {
+            moveCaret(keyCode == GLFW.GLFW_KEY_HOME ? line.begin() : line.end(), row);
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN) {
+            var targetRow = Mth.clamp(row + (keyCode == GLFW.GLFW_KEY_UP ? -1 : 1),
+                    0, displayLines.size() - 1);
+            var target = displayLines.get(targetRow);
+            var x = editorFont.width(getValue().substring(line.begin(), cursor)) + 2;
+            var offset = editorFont.plainSubstrByWidth(
+                    getValue().substring(target.begin(), target.end()), x).length();
+            moveCaret(target.begin() + offset, targetRow);
+            return true;
+        }
+        return false;
+    }
+
+    private void moveCaret(int index, int row) {
+        textField.setSelecting(Screen.hasShiftDown());
+        textField.seekCursor(Whence.ABSOLUTE, index);
+        preferCaretLine(row);
     }
 
     @Override

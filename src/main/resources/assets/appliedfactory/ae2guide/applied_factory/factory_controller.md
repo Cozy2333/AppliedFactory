@@ -26,7 +26,7 @@ Attach a Factory Bus to an AE2 cable and make sure it touches a machine. The con
 
 The simplest setup shares one AE2 network between the controller, storage and all Factory Buses. When ingredient and machine networks must be separated, connect them to different controller faces.
 
-Each controller face connected to an AE network consumes 1 AE/t. When all faces lose power, the controller pauses scripts, passive workflows, and existing orders and accepts no new orders. Work resumes when power returns; `sleep` does not advance while unpowered.
+Like quartz fiber, the controller shares energy across its faces through AE2's overlay energy grid while their item and channel networks remain separate. Each controller face connected to an AE network consumes 1 AE/t. When all faces lose power, the controller pauses scripts, passive workflows, and existing orders and accepts no new orders. Work resumes when power returns; `sleep` does not advance while unpowered.
 
 **Note: each controller face is an independent part that can provide its own subnet environment. Each face can provide 7 channels without a controller, up to 42 channels total. However, if two faces are connected together, they consume one channel from each other, so only 6 channels can ultimately be provided in total.**
 
