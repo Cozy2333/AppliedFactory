@@ -32,18 +32,46 @@ jobs:
           MOD_VERSION: ${{ github.ref_name }}
         run: ./gradlew build
 
-      - name: Read annotated tag notes
+      - name: Read release notes from CHANGELOG.md
         id: tag
         run: |
-          notes=""
-          if [ "$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}" 2>/dev/null)" = "tag" ]; then
-            notes="$(git for-each-ref --format='%(contents)' "refs/tags/${GITHUB_REF_NAME}")"
-          fi
-          {
-            echo 'body<<TAG_NOTES_EOF'
-            printf '%s\n' "$notes"
-            echo 'TAG_NOTES_EOF'
-          } >> "$GITHUB_OUTPUT"
+          version="${GITHUB_REF_NAME#v}"
+          minecraft_version="$(awk -F= '$1 == "minecraft_version" { print $2; exit }' gradle.properties)"
+          RELEASE_VERSION="$version" MINECRAFT_VERSION="$minecraft_version" python - <<'PY'
+          import os
+          import re
+          import uuid
+          from pathlib import Path
+
+          version = os.environ["RELEASE_VERSION"]
+          heading_pattern = re.compile(
+              r"\[?v?" + re.escape(version) + r"\]?(?:\s+-\s+.*)?"
+          )
+          lines = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+
+          start = None
+          for index, line in enumerate(lines):
+              if line.startswith("## ") and heading_pattern.fullmatch(line[3:].strip()):
+                  start = index + 1
+                  break
+
+          if start is None:
+              raise SystemExit(f"::error::CHANGELOG.md has no section for version {version}")
+
+          end = next(
+              (index for index in range(start, len(lines)) if lines[index].startswith("## ")),
+              len(lines),
+          )
+          body = "\n".join(lines[start:end]).strip()
+          if not body:
+              raise SystemExit(f"::error::CHANGELOG.md section for {version} is empty")
+
+          delimiter = f"CHANGELOG_{uuid.uuid4().hex}"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={version}\n")
+              output.write(f"minecraft_version={os.environ['MINECRAFT_VERSION']}\n")
+              output.write(f"body<<{delimiter}\n{body}\n{delimiter}\n")
+          PY
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -51,3 +79,19 @@ jobs:
           name: Applied Factory ${{ github.ref_name }}
           body: ${{ steps.tag.outputs.body }}
           files: build/libs/*.jar
+
+      - name: Publish to Modrinth and CurseForge
+        uses: Kira-NT/mc-publish@v3
+        with:
+          modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          curseforge-id: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          files: build/libs/!(*-@(dev|sources|javadoc)).jar
+          name: Applied Factory ${{ steps.tag.outputs.version }}
+          version: ${{ steps.tag.outputs.version }}
+          changelog: ${{ steps.tag.outputs.body }}
+          loaders: neoforge
+          game-versions: ${{ steps.tag.outputs.minecraft_version }}
+          java: 21
+          fail-mode: fail
