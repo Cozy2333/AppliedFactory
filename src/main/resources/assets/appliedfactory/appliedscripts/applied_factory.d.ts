@@ -254,10 +254,10 @@ declare function registerProcessingPattern(
   handler: (order: Order) => Generator<Action, unknown, any>,
 ): void;
 
-/** Pushes a message to players subscribed to this controller's log and writes
- * it to the server log; can be called at any time.
- * MCP execution also captures logs as its return. */
-declare function log(message: string): void;
+/** Sends a value to controller log subscribers and the server log. Strings are
+ * printed unchanged; other values are formatted as indented JSON. MCP execution
+ * captures logs as its return. */
+declare function log(value: unknown): void;
 
 /** Builds a flat item query/spec without parsing or validating its fields. */
 declare function item(id: string): ResourceQuery;

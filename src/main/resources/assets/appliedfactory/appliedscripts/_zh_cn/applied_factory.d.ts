@@ -240,10 +240,9 @@ declare function registerProcessingPattern(
   handler: (order: Order) => Generator<Action, unknown, any>,
 ): void;
 
-/** 把消息推送给订阅了该控制器日志的玩家，并写入服务器日志；
- * 可随时调用。
- * 在MCP执行时会抓取日志作为返回 */
-declare function log(message: string): void;
+/** 把值推送给订阅了该控制器日志的玩家，并写入服务器日志。
+ * 字符串原样输出，其他值格式化为缩进 JSON；MCP 执行时也会抓取日志。 */
+declare function log(value: unknown): void;
 
 /** 构造扁平物品查询/规格；不解析或校验字段。 */
 declare function item(id: string): ResourceQuery;

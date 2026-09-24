@@ -72,7 +72,7 @@ registerProcessingPattern(
 - `registerProcessingPattern(...)`：注册加工样板与订单处理器；
 - `go(...)`：启动独立的 generator workflow；
 - `sleep(ticks)`：创建等待动作；
-- `log(message)`：写入控制器日志；
+- `log(value)`：字符串原样写入控制器日志，对象、数组等值缩进为 JSON；循环引用标记为 `[Circular]`。`console.log/warn/error` 使用相同格式；
 - `rename(...)` / `itemNbt(...)`：物品专用辅助函数。
 
 ## 4. Network 与 Bus
@@ -305,7 +305,7 @@ go(function* () {
 ```ts
 const target = bus.target;
 if (target.blockEntityType === "minecraft:chest") {
-  log(JSON.stringify(target.nbt?.Items));
+  log(target.nbt?.Items);
 }
 ```
 

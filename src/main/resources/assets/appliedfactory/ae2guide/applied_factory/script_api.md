@@ -72,7 +72,7 @@ Common global entry points:
 - `registerProcessingPattern(...)`: register processing patterns and order handlers;
 - `go(...)`: start an independent generator workflow;
 - `sleep(ticks)`: create a wait action;
-- `log(message)`: write to the controller log;
+- `log(value)`: write strings unchanged and format objects, arrays and other values as indented JSON in the controller log; circular references are marked `[Circular]`. `console.log/warn/error` use the same formatting;
 - `rename(...)` / `itemNbt(...)`: item-only helpers.
 
 ## 4. Network and Bus
@@ -305,7 +305,7 @@ The output level persists in the bus NBT. Reading uses strong-signal semantics, 
 ```ts
 const target = bus.target;
 if (target.blockEntityType === "minecraft:chest") {
-  log(JSON.stringify(target.nbt?.Items));
+  log(target.nbt?.Items);
 }
 ```
 

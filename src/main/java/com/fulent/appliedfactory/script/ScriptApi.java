@@ -55,7 +55,7 @@ final class ScriptApi {
 
     void install() {
         binder.installGlobals(new JsGlobals(this));
-        binder.installGlobal("console", new JsConsole(host));
+        binder.installGlobal("console", new JsConsole(this));
     }
 
     void bind(ScriptExecutionContext context) {
@@ -82,6 +82,10 @@ final class ScriptApi {
 
     FactoryProgram.Host host() {
         return host;
+    }
+
+    void log(Object value) {
+        host.log(binder.formatLog(value));
     }
 
     Registration registration() {
@@ -667,8 +671,8 @@ final class JsGlobals {
      * Prints a message to this controller's log subscribers (chat) and the server
      * log.
      */
-    public Object log(String message) {
-        api.host().log(message);
+    public Object log(Object value) {
+        api.log(value);
         return null;
     }
 
@@ -1165,24 +1169,24 @@ final class JsOrder {
  */
 @JsBridge
 final class JsConsole {
-    private final FactoryProgram.Host host;
+    private final ScriptApi api;
 
-    JsConsole(FactoryProgram.Host host) {
-        this.host = host;
+    JsConsole(ScriptApi api) {
+        this.api = api;
     }
 
-    public Object log(String message) {
-        host.log(message);
+    public Object log(Object value) {
+        api.log(value);
         return null;
     }
 
-    public Object warn(String message) {
-        host.log(message);
+    public Object warn(Object value) {
+        api.log(value);
         return null;
     }
 
-    public Object error(String message) {
-        host.log(message);
+    public Object error(Object value) {
+        api.log(value);
         return null;
     }
 }

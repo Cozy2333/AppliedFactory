@@ -23,6 +23,7 @@ final class JsBridgeBinder {
     private final Value bindings;
     private final Value plainArrayFactory;
     private final Value arrayFactory;
+    private final Value logFormatter;
 
     JsBridgeBinder(Context context) {
         this.context = context;
@@ -39,6 +40,32 @@ final class JsBridgeBinder {
                   return Object.freeze(array);
                 }
                 """);
+        logFormatter = context.eval("js", """
+                value => {
+                  if (typeof value === "string") return value;
+                  if (typeof value === "undefined") return "undefined";
+                  const ancestors = [];
+                  try {
+                    const json = JSON.stringify(value, function (key, current) {
+                      if (typeof current === "bigint") return `${current}n`;
+                      if (current !== null && typeof current === "object") {
+                        while (ancestors.length && ancestors[ancestors.length - 1] !== this) {
+                          ancestors.pop();
+                        }
+                        if (ancestors.includes(current)) return "[Circular]";
+                        ancestors.push(current);
+                      }
+                      return current;
+                    }, 2);
+                    if (json === undefined) return String(value);
+                    const maxLength = 15_900;
+                    return json.length <= maxLength
+                      ? json : `${json.slice(0, maxLength)}\n... [truncated]`;
+                  } catch (error) {
+                    return `[Unable to format log value: ${String(error)}]`;
+                  }
+                }
+                """);
     }
 
     void installGlobals(Object facade) {
@@ -53,6 +80,10 @@ final class JsBridgeBinder {
 
     void installGlobal(String name, Object value) {
         bindings.putMember(name, wrap(value));
+    }
+
+    String formatLog(Object value) {
+        return value == UNDEFINED ? "undefined" : logFormatter.execute(value).asString();
     }
 
     Object wrap(Object value) {
