@@ -312,9 +312,10 @@ public final class FactoryActionExecutor {
         return true;
     }
 
-    /** Immediately breaks one block and returns the tool remainder and drops written to its source. */
+    /** Breaks one block and routes its whole drop bundle to one storage or the world. */
     public Optional<FactoryBreakResult> breakBlock(
-            UUID workflowId, FactoryBusAddress bus, FactoryResourceRef input) {
+            UUID workflowId, FactoryBusAddress bus, FactoryResourceRef input,
+            @Nullable FactoryEndpoint dropTarget) {
         validateWorkflowOrigin(workflowId, input);
         requireSingleItem(input, false);
         var target = busResolver.resolve(bus).orElse(null);
@@ -340,15 +341,91 @@ public final class FactoryActionExecutor {
         }
         var drops = itemResources(result.drops());
         var tool = itemResources(List.of(result.tool()));
-        var produced = new ArrayList<FactoryResource>(drops.size() + tool.size());
-        produced.addAll(drops);
-        produced.addAll(tool);
-        storeAtSourceOrRecover(workflowId, input.origin(),
-                recoverySide(input.origin(), bus), produced);
+        var recoverySide = recoverySide(input.origin(), bus);
+        var dropOrigin = input.origin();
+        var storedDrops = drops;
+        try {
+            if (!drops.isEmpty()
+                    && dropTarget != null
+                    && tryStoreWhole(workflowId, recoverySide, drops,
+                            key -> target(dropTarget, key))) {
+                dropOrigin = FactoryResourceOrigin.endpoint(dropTarget);
+            } else if (!drops.isEmpty()
+                    && !tryStoreWhole(workflowId, recoverySide, drops,
+                            key -> source(input.origin(), key))) {
+                dropOrRecover(workflowId, recoverySide, target, drops);
+                storedDrops = List.of();
+            }
+        } catch (RuntimeException exception) {
+            // The block has already been removed; preserve its tool remainder if drop routing fails.
+            escrow.recover(workflowId, recoverySide, tool);
+            throw exception;
+        }
+        var storedTool = tool;
+        if (!tool.isEmpty() && !tryStoreWhole(workflowId, recoverySide, tool,
+                key -> source(input.origin(), key))) {
+            dropOrRecover(workflowId, recoverySide, target, tool);
+            storedTool = List.of();
+        }
         changed.run();
         return Optional.of(new FactoryBreakResult(
-                new FactoryResourceRef(input.origin(), tool),
-                new FactoryResourceRef(input.origin(), drops)));
+                new FactoryResourceRef(input.origin(), storedTool),
+                new FactoryResourceRef(dropOrigin, storedDrops)));
+    }
+
+    /** Simulates the full bundle before insertion; a partial actual insert is rolled back. */
+    private boolean tryStoreWhole(
+            UUID workflowId, Direction recoverySide, List<FactoryResource> resources,
+            Function<AEKey, StorageAccess> resolve) {
+        var accesses = new ArrayList<StorageAccess>(resources.size());
+        for (var resource : resources) {
+            var access = resolve.apply(resource.key());
+            if (access == null
+                    || access.insert(resource.key(), resource.amount(), true) != resource.amount()) {
+                return false;
+            }
+            accesses.add(access);
+        }
+        var inserted = new ArrayList<StoredInsertion>();
+        for (int index = 0; index < resources.size(); index++) {
+            var resource = resources.get(index);
+            var amount = accesses.get(index).insert(resource.key(), resource.amount(), false);
+            if (amount > 0) {
+                inserted.add(new StoredInsertion(
+                        new FactoryResource(resource.key(), amount), accesses.get(index)));
+            }
+            if (amount == resource.amount()) {
+                continue;
+            }
+            var stranded = new ArrayList<FactoryResource>();
+            for (int rollback = inserted.size() - 1; rollback >= 0; rollback--) {
+                var insertion = inserted.get(rollback);
+                var written = insertion.resource();
+                var recovered = insertion.access().extract(
+                        written.key(), written.amount(), false);
+                if (recovered < written.amount()) {
+                    stranded.add(new FactoryResource(
+                            written.key(), written.amount() - recovered));
+                }
+            }
+            if (!stranded.isEmpty()) {
+                escrow.recover(workflowId, recoverySide,
+                        FactoryResourceRef.subtract(resources, stranded));
+                throw new IllegalStateException(
+                        "Storage rejected rollback after a partial break-result insertion");
+            }
+            return false;
+        }
+        return true;
+    }
+
+    private void dropOrRecover(
+            UUID workflowId, Direction recoverySide, FactoryBusTarget target,
+            List<FactoryResource> resources) {
+        if (!target.throwItems(itemStacks(resources))) {
+            escrow.recover(workflowId, recoverySide, resources);
+            throw new IllegalStateException("World rejected factory break drops");
+        }
     }
 
     /** Extracts a complete interaction input or returns null without partial progress. */
@@ -722,6 +799,9 @@ public final class FactoryActionExecutor {
     }
 
     private record SourcePlan(FactoryResource resource, StorageAccess source) {
+    }
+
+    private record StoredInsertion(FactoryResource resource, StorageAccess access) {
     }
 
     private record TransferPlan(

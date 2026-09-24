@@ -3,8 +3,10 @@ package com.fulent.appliedfactory.script;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
@@ -90,10 +92,13 @@ final class ScriptApi {
         topologyListeners.computeIfAbsent(side, ignored -> new ArrayList<>()).add(listener);
     }
 
-    void fireTopologyListeners() {
-        var listeners = topologyListeners.values().stream()
-                .flatMap(List::stream)
-                .toList();
+    void fireTopologyListeners(Set<Direction> affectedSides) {
+        var listeners = new LinkedHashSet<Value>();
+        for (var side : Direction.values()) {
+            if (affectedSides.contains(side)) {
+                listeners.addAll(topologyListeners.getOrDefault(side, List.of()));
+            }
+        }
         for (var listener : listeners) {
             listener.execute();
         }
@@ -511,10 +516,12 @@ final class ScriptApi {
     }
 
     Object breakBlock(
-            com.fulent.appliedfactory.factory.FactoryBusAddress bus, Object tool) {
+            com.fulent.appliedfactory.factory.FactoryBusAddress bus, Object tool,
+            Object rawDropTarget) {
         requireActiveContext("bus.break(tool)");
         var input = requireItemResource(tool);
-        var outcome = host.breakBlock(activeContext.workflowId(), bus, input);
+        var dropTarget = JsValues.isNullish(rawDropTarget) ? null : requireEndpoint(rawDropTarget);
+        var outcome = host.breakBlock(activeContext.workflowId(), bus, input, dropTarget);
         if (outcome.isEmpty()) {
             return binder.wrap(new Object[] {
                     tool, resourceArray(input.origin(), List.of()), false
@@ -860,8 +867,8 @@ final class JsBus {
      * keyword.
      */
     @JsName("break")
-    public Object breakBlock(Object tool) {
-        return api.breakBlock(address, tool);
+    public Object breakBlock(Object tool, Object dropTarget) {
+        return api.breakBlock(address, tool, dropTarget);
     }
 
     /** Reads (no args) or sets (with a 0-15 level) this bus's redstone. */

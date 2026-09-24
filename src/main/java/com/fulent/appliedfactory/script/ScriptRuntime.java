@@ -1,6 +1,10 @@
 package com.fulent.appliedfactory.script;
 
+import java.util.Set;
+
 import org.jetbrains.annotations.Nullable;
+
+import net.minecraft.core.Direction;
 
 /** Controller-owned scripting engine for one loaded source revision. */
 public interface ScriptRuntime {
@@ -25,7 +29,7 @@ public interface ScriptRuntime {
             Object result,
             boolean firstStep);
 
-    void runTopologyListeners();
+    void runTopologyListeners(Set<Direction> affectedSides);
 
     /** Releases the engine context and every live guest value owned by it. */
     default void close() {

@@ -1,6 +1,7 @@
 package com.fulent.appliedfactory.factory;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -108,9 +109,10 @@ public final class FactoryProgram {
         boolean place(
                 UUID workflowId, FactoryBusAddress bus, FactoryResourceRef block, boolean shift);
 
-        /** Returns the post-break tool and drops written back to their shared origin. */
+        /** Returns stored post-break handles; world-spawned results have empty handles. */
         Optional<FactoryBreakResult> breakBlock(
-                UUID workflowId, FactoryBusAddress bus, FactoryResourceRef tool);
+                UUID workflowId, FactoryBusAddress bus, FactoryResourceRef tool,
+                @Nullable FactoryEndpoint dropTarget);
 
         /**
          * Redstone level the target block emits toward this bus's face, 0-15.
@@ -152,7 +154,7 @@ public final class FactoryProgram {
     private final List<FactoryJob> jobs = new ArrayList<>();
     private final Set<Integer> stoppedPassives = new HashSet<>();
     private final Set<UUID> pendingCancellations = new HashSet<>();
-    private boolean topologyDirty;
+    private final EnumSet<Direction> pendingTopologySides = EnumSet.noneOf(Direction.class);
 
     private FactoryProgram(
             ScriptRuntime runtime,
@@ -271,10 +273,11 @@ public final class FactoryProgram {
 
     public void step() {
         processCancellations();
-        if (topologyDirty) {
-            topologyDirty = false;
+        if (!pendingTopologySides.isEmpty()) {
+            var affectedSides = EnumSet.copyOf(pendingTopologySides);
+            pendingTopologySides.clear();
             try {
-                runtime.runTopologyListeners();
+                runtime.runTopologyListeners(affectedSides);
             } catch (RuntimeException exception) {
                 host.reportScriptFailure("network onChange", messageOf(exception));
             }
@@ -292,8 +295,8 @@ public final class FactoryProgram {
         recoverOrphanEscrows();
     }
 
-    public void markEnvironmentChanged() {
-        topologyDirty = true;
+    public void markEnvironmentChanged(Direction side) {
+        pendingTopologySides.add(side);
     }
 
     public void cancelJobs(UUID craftingRequestId) {

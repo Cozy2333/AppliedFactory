@@ -162,11 +162,13 @@ interface Bus {
   /** Sets the redstone level the bus emits outward from its physical cable face (0-15); false when the bus cannot resolve. */
   redstone(level: number): boolean;
   /**
-   * Immediately breaks one block. Returns [tool, drops, success]: tool is the
-   * post-break remainder (null when destroyed), drops is always a ResourceArray,
-   * and a failed attempt returns the unchanged input tool and an empty array.
+   * Immediately breaks one block. The full drop bundle goes to dropTarget if it fits,
+   * otherwise to the tool's source; if neither accepts it, the items drop into the world.
+   * drops contains only items stored in a target and is empty when they drop into the world.
+   * The tool remainder returns to its source or drops into the world if it cannot fit.
+   * Failure returns the unchanged input tool, an empty array, and false.
    */
-  break(tool: Resource): BlockBreakResult;
+  break(tool: Resource, dropTarget?: ResourceTarget): BlockBreakResult;
   /**
    * Gets a handle to the numbered slot of the target container (ae2:i inventory).
    * The index is 0-based and resolved against the container's whole inventory,
@@ -200,7 +202,7 @@ interface Network {
   /** Current topology snapshot, re-enumerated on every read. */
   readonly buses: readonly Bus[];
 
-  /** Called synchronously when the topology changes. */
+  /** Runs on this face's node or its grid's Factory Bus node events; a shared callback runs once per step. */
   onChange(callback: () => void): void;
   /** Live check whether two controller faces join the same AE grid; disconnected faces return false. */
   isSameNetwork(other: Network): boolean;

@@ -179,7 +179,7 @@ public final class FactoryBusPart
         var grid = node.getGrid();
         if (grid != null) {
             for (var controller : grid.getMachines(FactoryControllerBlockEntity.class)) {
-                controller.onBusTopologyChanged();
+                controller.onBusTopologyChanged(grid);
             }
         }
     }

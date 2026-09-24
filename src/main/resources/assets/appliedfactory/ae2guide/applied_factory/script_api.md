@@ -93,7 +93,7 @@ if (network("left").isSameNetwork(network("right"))) {
 
 ### 4.2 Bus discovery and stable handles
 
-`network.buses` returns the current topology snapshot on every read. `network.onChange(callback)` is called synchronously only when a Factory Bus joins or leaves the AE network; ordinary machine block updates do not trigger it. The callback can rebuild cached handle arrays but cannot `yield`.
+`network.buses` returns the current topology snapshot on every read. `network.onChange(callback)` responds to events from that controller face's AE node or Factory Bus nodes on its grid; ordinary machine block updates do not trigger it. Events are coalesced at the next script step, and a callback shared by several affected sides runs once. AE node notifications may invoke the callback even if the visible bus list did not change. The callback can rebuild cached handle arrays but cannot `yield`.
 
 ### 3.1 Proactive network orders
 
@@ -285,9 +285,9 @@ go(function* () {
 - `use(item?, shift?)` first tries to right-click the target, then falls back to the item's in-air use. An item call returns `[current, success]`; on success `current` is the remainder written back to the source (for example the damaged tool), or `null` when fully consumed; failure returns the original handle and `false`;
 - `place(block, shift?)` requires `amount === 1` and a BlockItem resource;
 - `drop(item)` deducts the resource exactly and spawns an item entity along the bus facing;
-- `break(tool)` returns `[tool, drops, success]`; on success `tool` is the damaged tool written back to the source (`null` when destroyed) and `drops` is the drop `ResourceArray`; failure returns the original tool, an empty array and `false`.
+- `break(tool, dropTarget?)` returns `[tool, drops, success]`. The whole drop bundle goes to `dropTarget` if it fits, otherwise to the tool's source; if neither fits, the items drop into the world and `drops` is empty. The tool remainder returns to its source or drops into the world if it cannot fit. Failure returns the original tool, an empty array and `false`.
 
-Item-holding operations extract the exact old key from the handle's source, then write the remainder, container items, damaged tool and drops back to the same source. If a third-party storage rejects the write-back, the result enters recovery escrow and the workflow fails, to avoid duplicating or deleting items.
+Item-holding operations extract the exact old key from the handle's source. `use` and `place` write their hand remainder back to that source; world-spawned results from `use` must be collected separately. `break` routes its tool and drops as described above. If a third-party storage violates insertion or rollback simulation, recoverable items enter emergency escrow and the workflow fails.
 
 ### 8.3 Redstone
 

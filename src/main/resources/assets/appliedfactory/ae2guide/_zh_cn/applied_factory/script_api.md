@@ -93,7 +93,7 @@ if (network("left").isSameNetwork(network("right"))) {
 
 ### 4.2 总线发现与稳定句柄
 
-`network.buses` 每次读取都返回当前拓扑快照。`network.onChange(callback)` 只在工厂总线加入或离开 AE 网络时同步调用，普通机器方块更新不会触发；回调可以重建缓存的句柄数组，但不能 `yield`。
+`network.buses` 每次读取都返回当前拓扑快照。`network.onChange(callback)` 由本方向控制器面节点或所属 AE 网络中的工厂总线节点事件触发；普通机器方块更新不会触发。多个事件在下一轮脚本调度中合并，同一回调即使注册到多个受影响方向也只执行一次。事件不比较前后拓扑，因此 AE 节点发出状态通知但可见总线未变时，回调仍可能执行。回调可以重建缓存的句柄数组，但不能 `yield`。
 
 ### 3.1 主动网络订单
 
@@ -285,9 +285,9 @@ go(function* () {
 - `use(item?, shift?)` 先尝试右键目标，再回退到物品的空中使用。持物调用返回 `[current, success]`；成功时 `current` 是写回来源的剩余物（例如受损的工具），完全消耗时为 `null`；失败时返回原句柄与 `false`；
 - `place(block, shift?)` 要求 `amount === 1` 且资源是 BlockItem；
 - `drop(item)` 精确扣除资源并沿总线朝向生成物品实体；
-- `break(tool)` 返回 `[tool, drops, success]`；成功时 `tool` 是写回来源的受损工具（损毁时为 `null`），`drops` 是掉落 `ResourceArray`；失败时返回原工具、空数组与 `false`。
+- `break(tool, dropTarget?)` 返回 `[tool, drops, success]`。整批掉落物优先进入 `dropTarget`，放不下则尝试工具来源；仍放不下便落入世界，此时 `drops` 为空数组。工具剩余物返回其来源，放不下也落地。失败时返回原工具、空数组与 `false`。
 
-持物操作会从句柄来源精确取出旧 key，再把剩余物、容器物品、受损工具与掉落写回同一来源。第三方存储若拒绝写回，结果进入 recovery escrow，并使 workflow 失败以避免复制或删除物品。
+持物操作会从句柄来源精确取出旧 key。`use` 和 `place` 把手中剩余物写回来源；`use` 在世界生成的掉落物需要另行收集。`break` 按上述顺序路由工具和掉落物。第三方存储违反插入或回滚模拟时，可恢复的物品进入应急托管区，workflow 失败。
 
 ### 8.3 红石
 

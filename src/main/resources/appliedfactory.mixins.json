@@ -6,7 +6,11 @@
   "refmap": "appliedfactory.refmap.json",
   "mixins": [
     "CraftingCpuLogicMixin",
+    "CraftingLinkMixin",
     "GridMixin"
+  ],
+  "client": [
+    "MultilineTextFieldAccessor"
   ],
   "injectors": {
     "defaultRequire": 0

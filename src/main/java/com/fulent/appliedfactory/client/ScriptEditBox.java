@@ -4,12 +4,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.fulent.appliedfactory.mixin.MultilineTextFieldAccessor;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.Whence;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
@@ -29,16 +31,20 @@ final class ScriptEditBox extends MultiLineEditBox {
     private static final int GUTTER_PADDING = 4;
     // Below this width the gutter is dropped so code keeps usable space.
     private static final int GUTTER_MIN_PANEL_WIDTH = 200;
+    private static final int TEXT_COLOR = 0xFFE0E0E0;
+    private static final int CURSOR_COLOR = 0xFFD0D0D0;
     private static final ResourceLocation SCROLLER = ResourceLocation.fromNamespaceAndPath("ae2", "small_scroller");
 
     private final Font editorFont;
     private final int panelX;
     private final int panelWidth;
     private final List<Integer> lineNumbers = new ArrayList<>();
+    private final List<LineRange> displayLines = new ArrayList<>();
     private int gutterWidth;
     private int characterLimit = Integer.MAX_VALUE;
     private boolean editable = true;
     private boolean adjustingGutter;
+    private long caretFocusedAt;
 
     ScriptEditBox(Font font, int x, int y, int width, int height,
             Component placeholder, Component message) {
@@ -66,7 +72,22 @@ final class ScriptEditBox extends MultiLineEditBox {
             return;
         }
         updateGutter(value);
+        rebuildDisplayLines(value);
         rebuildLineNumbers(value);
+    }
+
+    private void rebuildDisplayLines(String value) {
+        displayLines.clear();
+        if (value.isEmpty()) {
+            displayLines.add(new LineRange(0, 0));
+            return;
+        }
+        editorFont.getSplitter().splitLines(value, getWidth() - totalInnerPadding(),
+                Style.EMPTY, false, (style, begin, end) ->
+                        displayLines.add(new LineRange(begin, end)));
+        if (value.endsWith("\n")) {
+            displayLines.add(new LineRange(value.length(), value.length()));
+        }
     }
 
     /** Grows or shrinks the gutter to fit the largest source line number. */
@@ -141,6 +162,71 @@ final class ScriptEditBox extends MultiLineEditBox {
     }
 
     @Override
+    public void setFocused(boolean focused) {
+        if (focused && !isFocused()) {
+            caretFocusedAt = net.minecraft.Util.getMillis();
+        }
+        super.setFocused(focused);
+    }
+
+    @Override
+    protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        var value = getValue();
+        var cursor = textField.cursor();
+        var cursorLine = 0;
+        for (int index = 0; index < displayLines.size(); index++) {
+            var line = displayLines.get(index);
+            if (cursor >= line.begin() && cursor <= line.end()) {
+                cursorLine = index;
+                break;
+            }
+        }
+        var drawCaret = editable && isFocused()
+                && (net.minecraft.Util.getMillis() - caretFocusedAt) / 300L % 2L == 0L;
+        var hasSelection = textField.hasSelection();
+        var selectionAnchor = ((MultilineTextFieldAccessor) textField).factoryGetSelectCursor();
+        var selectionStart = Math.min(cursor, selectionAnchor);
+        var selectionEnd = Math.max(cursor, selectionAnchor);
+        var textX = getX() + innerPadding();
+        var lineY = getY() + innerPadding();
+        var lineIndex = 0;
+        for (var line : displayLines) {
+            if (withinContentAreaTopBottom(lineY, lineY + LINE_HEIGHT)) {
+                var text = value.substring(line.begin(), line.end());
+                graphics.drawString(editorFont, text, textX, lineY, TEXT_COLOR);
+
+                // Adjacent wrapped lines can share a cursor index. Vanilla draws a caret on
+                // both because its range check includes both ends; use the chosen line only.
+                if (drawCaret && lineIndex == cursorLine) {
+                    var caretX = textX + editorFont.width(value.substring(line.begin(), cursor));
+                    if (cursor == value.length()) {
+                        graphics.drawString(editorFont, "_", caretX - 1, lineY, CURSOR_COLOR);
+                    } else {
+                        graphics.fill(caretX - 1, lineY - 1,
+                                caretX + 1, lineY + LINE_HEIGHT, CURSOR_COLOR);
+                    }
+                }
+
+                if (hasSelection && selectionStart <= line.end()
+                        && line.begin() <= selectionEnd) {
+                    var start = textX + editorFont.width(value.substring(
+                            line.begin(), Math.max(line.begin(), selectionStart)));
+                    var end = selectionEnd > line.end()
+                            ? getRight() - innerPadding()
+                            : textX + editorFont.width(value.substring(
+                                    line.begin(), selectionEnd));
+                    if (end > start) {
+                        graphics.fill(RenderType.guiTextHighlight(), start, lineY,
+                                end, lineY + LINE_HEIGHT, 0xFF0000FF);
+                    }
+                }
+            }
+            lineY += LINE_HEIGHT;
+            lineIndex++;
+        }
+    }
+
+    @Override
     public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.renderWidget(graphics, mouseX, mouseY, partialTick);
         if (!visible || gutterWidth == 0) {
@@ -210,5 +296,8 @@ final class ScriptEditBox extends MultiLineEditBox {
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
         return editable && super.charTyped(codePoint, modifiers);
+    }
+
+    private record LineRange(int begin, int end) {
     }
 }

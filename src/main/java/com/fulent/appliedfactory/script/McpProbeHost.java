@@ -59,6 +59,10 @@ public final class McpProbeHost implements FactoryProgram.Host {
         return List.copyOf(errors);
     }
 
+    public boolean isPowered() {
+        return controller.isPowered();
+    }
+
     @Override
     public long tick() {
         return controller.tick();
@@ -186,8 +190,9 @@ public final class McpProbeHost implements FactoryProgram.Host {
 
     @Override
     public Optional<FactoryBreakResult> breakBlock(
-            UUID workflowId, FactoryBusAddress bus, FactoryResourceRef tool) {
-        return controller.breakBlock(workflowId, bus, tool);
+            UUID workflowId, FactoryBusAddress bus, FactoryResourceRef tool,
+            FactoryEndpoint dropTarget) {
+        return controller.breakBlock(workflowId, bus, tool, dropTarget);
     }
 
     @Override

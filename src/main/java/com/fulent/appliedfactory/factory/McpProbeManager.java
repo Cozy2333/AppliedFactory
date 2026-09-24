@@ -53,6 +53,12 @@ public final class McpProbeManager {
             String code,
             long timeoutTicks,
             McpProbeSink sink) {
+        if (!controller.isPowered()) {
+            sink.onResult(requestId, new McpProbeResult(
+                    "error", "Factory controller has no AE power", List.of(),
+                    null, List.of(), 0, 0));
+            return;
+        }
         var host = new McpProbeHost(controller);
         var topLevel = new ScriptExecutionContext(
                 UUID.randomUUID(), null, List.of(), List.of(), null);
@@ -109,8 +115,10 @@ public final class McpProbeManager {
         long now = event.getServer().getTickCount();
         for (var entry : List.copyOf(ACTIVE.entrySet())) {
             var probe = entry.getValue();
-            probe.program().step();
-            probe.bumpSteps();
+            if (probe.host().isPowered()) {
+                probe.program().step();
+                probe.bumpSteps();
+            }
             long elapsed = now - probe.startedAt();
             if (probe.program().activeJobCount() == 0) {
                 ACTIVE.remove(entry.getKey());

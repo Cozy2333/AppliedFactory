@@ -14,12 +14,7 @@ import appeng.me.Grid;
 import appeng.me.GridNode;
 import net.minecraft.nbt.CompoundTag;
 
-/**
- * Turns the per-tick topology fingerprint into an event: every node that joins or leaves a grid
- * flows through {@code Grid.add} / {@code Grid.remove}, so when the node belongs to a
- * {@link FactoryBusPart} the controllers on that grid are told their bus topology changed. Bus
- * Target block updates deliberately do not count as topology changes.
- */
+/** Routes controller and bus node membership events to the controller faces on that grid. */
 @Mixin(Grid.class)
 public abstract class GridMixin {
     @Inject(method = "add", at = @At("TAIL"))
@@ -33,12 +28,16 @@ public abstract class GridMixin {
     }
 
     private void notifyBusTopologyChanged(GridNode gridNode) {
+        if (gridNode.getOwner() instanceof FactoryControllerBlockEntity controller) {
+            controller.onControllerNodeTopologyChanged(gridNode);
+            return;
+        }
         if (!(gridNode.getOwner() instanceof FactoryBusPart)) {
             return;
         }
-        for (var controller : ((IGrid) (Object) this)
-                .getMachines(FactoryControllerBlockEntity.class)) {
-            controller.onBusTopologyChanged();
+        var grid = (IGrid) (Object) this;
+        for (var controller : grid.getMachines(FactoryControllerBlockEntity.class)) {
+            controller.onBusTopologyChanged(grid);
         }
     }
 }

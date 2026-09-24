@@ -19,6 +19,7 @@ import com.fulent.appliedfactory.block.FactoryControllerBlock;
 import com.fulent.appliedfactory.factory.FactoryActionExecutor;
 import com.fulent.appliedfactory.factory.FactoryBusAddress;
 import com.fulent.appliedfactory.factory.CraftingRequestRegistry;
+import com.fulent.appliedfactory.factory.CraftingRequestContext;
 import com.fulent.appliedfactory.factory.FactoryCraftingAction;
 import com.fulent.appliedfactory.factory.FactoryCraftingResult;
 import com.fulent.appliedfactory.factory.FactoryEndpoint;
@@ -127,6 +128,8 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     private boolean programInitialized;
     private long programLoadNotBeforeTick = Long.MAX_VALUE;
     private boolean programStoreResolved;
+    /** Advances only while at least one controller port has AE power. */
+    private long poweredWorkTicks;
     private BusTopology busTopology = BusTopology.EMPTY;
     private boolean busTopologyDirty = true;
     /** Program payload carried by the item this controller was just placed from. */
@@ -141,7 +144,7 @@ public final class FactoryControllerBlockEntity extends BlockEntity
                     .setInWorldNode(true)
                     .setExposedOnSides(Set.of(direction))
                     .setFlags(GridFlags.REQUIRE_CHANNEL)
-                    .setIdlePowerUsage(1.0D / Direction.values().length)
+                    .setIdlePowerUsage(1.0D)
                     .setTagName("network_" + direction.getName())
                     .setVisualRepresentation(Items.IRON_INGOT)
                     .addService(ICraftingProvider.class, attachment)
@@ -310,7 +313,7 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     @Override
     public void onStateChanged(
             FactoryControllerBlockEntity owner, IGridNode node, State state) {
-        onBusTopologyChanged();
+        onControllerNodeTopologyChanged(node);
         invalidatePatterns();
     }
 
@@ -489,6 +492,9 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     }
 
     private List<IPatternDetails> availablePatterns(Direction side) {
+        if (!isPowered()) {
+            return List.of();
+        }
         rebuildPatternsIfNeeded();
         return offeredPatterns.stream()
                 .filter(pattern -> pattern.orderNetwork == side)
@@ -527,7 +533,7 @@ public final class FactoryControllerBlockEntity extends BlockEntity
             Direction networkSide,
             IPatternDetails patternDetails,
             KeyCounter[] inputHolder) {
-        if (level == null || program == null || !program.canAcceptJobs()) {
+        if (level == null || !isPowered() || program == null || !program.canAcceptJobs()) {
             return false;
         }
         rebuildPatternsIfNeeded();
@@ -552,12 +558,13 @@ public final class FactoryControllerBlockEntity extends BlockEntity
         if (!program.startJob(offered.handler, networkSide, inputs, outputs)) {
             return false;
         }
+        CraftingRequestRegistry.registerOwner(CraftingRequestContext.current(), this);
         setChanged();
         return true;
     }
 
     private boolean isBusy(Direction side) {
-        return program == null
+        return !isPowered() || program == null
                 || !program.canAcceptJobs()
                 || availablePatterns(side).isEmpty();
     }
@@ -566,7 +573,7 @@ public final class FactoryControllerBlockEntity extends BlockEntity
 
     @Override
     public long tick() {
-        return level == null ? 0L : level.getGameTime();
+        return poweredWorkTicks;
     }
 
     @Override
@@ -736,8 +743,9 @@ public final class FactoryControllerBlockEntity extends BlockEntity
     public Optional<com.fulent.appliedfactory.factory.FactoryBreakResult> breakBlock(
             UUID workflowId,
             FactoryBusAddress bus,
-            com.fulent.appliedfactory.factory.FactoryResourceRef tool) {
-        return actionExecutor.breakBlock(workflowId, bus, tool);
+            com.fulent.appliedfactory.factory.FactoryResourceRef tool,
+            FactoryEndpoint dropTarget) {
+        return actionExecutor.breakBlock(workflowId, bus, tool, dropTarget);
     }
 
     @Override
@@ -793,15 +801,35 @@ public final class FactoryControllerBlockEntity extends BlockEntity
         setChanged();
     }
 
-    /**
-     * Called by the controller nodes, bus nodes and AE2 grid hooks when a controller side changes
-     * grids or the active bus set changes. Invalidates the lookup snapshot and notifies
-     * network.onChange listeners on the next step.
-     */
-    public void onBusTopologyChanged() {
+    /** Queues the face owned by this controller node for the next script step. */
+    public void onControllerNodeTopologyChanged(IGridNode changedNode) {
+        var affected = EnumSet.noneOf(Direction.class);
+        for (var entry : networkNodes.entrySet()) {
+            if (entry.getValue().getNode() == changedNode) {
+                affected.add(entry.getKey());
+            }
+        }
+        queueTopologyEvents(affected);
+    }
+
+    /** Queues every controller face attached to the bus's AE grid. */
+    public void onBusTopologyChanged(IGrid grid) {
+        var affected = EnumSet.noneOf(Direction.class);
+        for (var entry : networkNodes.entrySet()) {
+            if (entry.getValue().getGrid() == grid) {
+                affected.add(entry.getKey());
+            }
+        }
+        queueTopologyEvents(affected);
+    }
+
+    private void queueTopologyEvents(Set<Direction> affected) {
+        if (affected.isEmpty()) {
+            return;
+        }
         invalidateBusTopology();
         if (program != null) {
-            program.markEnvironmentChanged();
+            affected.forEach(program::markEnvironmentChanged);
         } else if (!programInitialized) {
             scheduleProgramInitialization();
         }
@@ -995,12 +1023,15 @@ public final class FactoryControllerBlockEntity extends BlockEntity
         if (!level.isClientSide) {
             // 为子网供电
             controller.bridgePowerBetweenNetworks();
-            controller.initializeProgramWhenReady();
-            // 推进脚本任务（挂起 job 恢复/重试/终结、被动处理器、资源回收）
-            if (controller.program != null) {
-                controller.program.step();
-            } else {
-                controller.recoverAllEscrows();
+            if (controller.isPowered()) {
+                controller.poweredWorkTicks++;
+                controller.initializeProgramWhenReady();
+                // 推进脚本任务（挂起 job 恢复/重试/终结、被动处理器、资源回收）
+                if (controller.program != null) {
+                    controller.program.step();
+                } else {
+                    controller.recoverAllEscrows();
+                }
             }
             // 同步网络在线/离线外观；下划线闪烁由客户端贴图动画完成。
             var active = controller.isActive();

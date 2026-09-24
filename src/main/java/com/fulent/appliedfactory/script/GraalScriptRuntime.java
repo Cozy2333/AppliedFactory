@@ -164,11 +164,11 @@ public final class GraalScriptRuntime implements ScriptRuntime {
     }
 
     @Override
-    public void runTopologyListeners() {
+    public void runTopologyListeners(java.util.Set<net.minecraft.core.Direction> affectedSides) {
         var loaded = environment;
         if (loaded != null) {
             withBudget(loaded.context(), () -> {
-                loaded.api().fireTopologyListeners();
+                loaded.api().fireTopologyListeners(affectedSides);
                 return null;
             });
         }

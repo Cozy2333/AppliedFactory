@@ -152,10 +152,11 @@ interface Bus {
   /** 设置总线从物理线缆面向外输出的红石等级（0-15）；总线不可解析时返回 false。 */
   redstone(level: number): boolean;
   /**
-   * 立即破坏一个方块，返回 [tool, drops, success]。tool 是破坏后的工具（损毁时为
-   * null），drops 恒为 ResourceArray；失败时返回原工具和空数组。
+   * 立即破坏一个方块。整批掉落物优先进入 dropTarget；放不下则尝试工具来源，
+   * 再放不下便落入世界。drops 只包含成功存储的物品，落地时为空数组。
+   * 工具剩余物返回其来源，放不下则落地。失败时返回原工具、空数组和 false。
    */
-  break(tool: Resource): BlockBreakResult;
+  break(tool: Resource, dropTarget?: ResourceTarget): BlockBreakResult;
   /**
    * 获取目标容器（ae2:i 物品栏）指定编号槽位的句柄，索引从 0 开始，按容器完整物品栏
    * 解析，不受总线所贴面的输入输出限制。槽位句柄可 extract()/storage()，也可作为
@@ -186,7 +187,7 @@ interface Network {
   /** 当前拓扑快照，每次读取都重新枚举。 */
   readonly buses: readonly Bus[];
 
-  /** 拓扑变化时同步调用 */
+  /** 本方向节点或所属网络的工厂总线节点发出事件时执行；同轮事件的同一回调只执行一次。 */
   onChange(callback: () => void): void;
   /** 实时判断两个控制器面是否连接同一个 AE 网格；未连接面返回 false。 */
   isSameNetwork(other: Network): boolean;
