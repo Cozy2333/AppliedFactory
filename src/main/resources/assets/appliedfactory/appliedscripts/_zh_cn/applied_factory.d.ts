@@ -47,7 +47,7 @@ interface ResourceQuery {
 interface Resource {
   /** 原始 AEKeyType ID；未知扩展 channel 不需要额外接口或适配器。 */
   readonly channel: string;
-  /** 该 channel 自己的 codec NBT，可直接传回 stack(channel, key, amount)。 */
+  /** 该 channel 自己的 codec NBT；展开后可与 channel 一起构成扁平查询。 */
   readonly key: NbtCompound;
   /** 便于显示和筛选的 AEKey ID；不用于重建未知 key。 */
   readonly id: string;
@@ -209,7 +209,7 @@ type ResourceTarget = Network | Bus | Slot;
 
 interface PatternDefinition {
   readonly orderNetwork: NetworkSide;
-  /** stack()/item() 或 Recipe.inputs/Recipe.outputs 提供的扁平规格。 */
+  /** item()/fluid() 或 Recipe.inputs/Recipe.outputs 提供的扁平规格。 */
   readonly inputs: readonly ResourceSpec[];
   readonly outputs: readonly ResourceSpec[];
 }
@@ -242,17 +242,30 @@ declare function registerProcessingPattern(
  * 在MCP执行时会抓取日志作为返回 */
 declare function log(message: string): void;
 
-/** 构造可复用于 extract()、样板与合成订单的扁平精确物品规格；components 是 1.21+ data component patch。 */
+/** 构造扁平物品查询/规格；不解析或校验字段。 */
+declare function item(id: string): ResourceQuery;
+declare function item(
+  id: string,
+  amount: undefined,
+  components?: NbtCompound,
+): ResourceQuery;
+/** 给扁平查询/规格添加可选数量和物品组件。 */
 declare function item(
   id: string,
   amount: number,
   components?: NbtCompound,
 ): ResourceSpec;
-/** 构造可复用的扁平规格；key 对象的字段会提升到 channel 与 amount 同级。 */
-declare function stack(
-  channel: ResourceChannel,
-  key: NbtCompound,
+/** 构造扁平流体查询/规格；不解析或校验字段。 */
+declare function fluid(id: string): ResourceQuery;
+declare function fluid(
+  id: string,
+  amount: undefined,
+  components?: NbtCompound,
+): ResourceQuery;
+declare function fluid(
+  id: string,
   amount: number,
+  components?: NbtCompound,
 ): ResourceSpec;
 /** 立即原位改名；不是 ae2:i 时抛出运行时错误，资源不足时返回 null。 */
 declare function rename(item: Resource, name: string): Resource | null;
@@ -275,7 +288,7 @@ interface Recipe {
   readonly type: string;
   /** 规范化输入（服务端通用提取仅覆盖物品；流体/化学品/输入数量以 json 为准）。槽位带 options 表示任选其一。 */
   readonly inputs: readonly RecipeInput[];
-  /** 规范化主输出，与 stack() 的 ResourceSpec 同形。 */
+  /** 规范化主输出，与 item()/fluid() 的 ResourceSpec 同为扁平结构。 */
   readonly outputs: readonly ResourceSpec[];
   /** 原始配方 JSON 只读参考（复杂配方如流体/化学品/能量/多输出）；无法重编码时为 null。 */
   readonly json: Record<string, NbtValue> | null;

@@ -662,51 +662,25 @@ final class JsGlobals {
         return api.itemNbt(item);
     }
 
-    public Object item(String id, long amount, Object components) {
-        var resourceId = ResourceLocation.tryParse(id);
-        if (resourceId == null) {
-            throw JsValues.error("Invalid item id: " + id);
-        }
-        var key = new CompoundTag();
-        key.putString("id", resourceId.toString());
-        var componentPatch = api.optionalNbt(components, "components");
-        if (componentPatch != null) {
-            key.put("components", componentPatch);
-        }
-        return spec(AEKeyType.items(), key, amount);
+    public Object item(String id, Object rawAmount, Object components) {
+        return flatQuery("ae2:i", id, rawAmount, components);
     }
 
-    public Object stack(String channel, Object rawKey, long amount) {
-        var keyObject = JsValues.object(rawKey, "stack key");
-        var keyType = ScriptApi.resolveChannel(channel);
-        return spec(
-                keyType,
-                NbtJs.fromObject(keyObject, "key"),
-                amount);
+    public Object fluid(String id, Object rawAmount, Object components) {
+        return flatQuery("ae2:f", id, rawAmount, components);
     }
 
-    private Map<String, Object> spec(AEKeyType channel, CompoundTag keyTag, long amount) {
-        requireAmount(amount);
-        var key = channel.loadKeyFromTag(api.host().registries(), keyTag);
-        if (key == null) {
-            throw JsValues.error(
-                    "Invalid key for AE resource channel " + channel.getId());
-        }
-        var encoded = NbtJs.toJs(key.toTag(api.host().registries()));
-        if (!(encoded instanceof Map<?, ?> keyFields)) {
-            throw JsValues.error("AE resource keys must encode as an object");
-        }
+    private static Map<String, Object> flatQuery(
+            String channel, String id, Object amount, Object components) {
         var result = new LinkedHashMap<String, Object>();
-        result.put("channel", channel.getId().toString());
-        for (var entry : keyFields.entrySet()) {
-            var field = String.valueOf(entry.getKey());
-            if (field.equals("channel") || field.equals("amount")
-                    || field.equals("options") || field.startsWith("$")) {
-                throw JsValues.error("AE resource key uses reserved flat field: " + field);
-            }
-            result.put(field, entry.getValue());
+        result.put("channel", channel);
+        result.put("id", id);
+        if (!JsValues.isNullish(components)) {
+            result.put("components", components);
         }
-        result.put("amount", amount);
+        if (!JsValues.isNullish(amount)) {
+            result.put("amount", amount);
+        }
         return result;
     }
 
@@ -721,7 +695,7 @@ final class JsGlobals {
 
     /**
      * Accepts a flat {@code {channel, ...keyFields, amount}} object (the same
-     * shape returned by {@code stack()}/{@code item()} and exported recipes).
+     * shape returned by {@code item()}/{@code fluid()} and exported recipes).
      */
     private FactoryResource spec(Object raw, String name) {
         return api.resourceSpec(raw, name);
@@ -731,12 +705,6 @@ final class JsGlobals {
         return resources.stream()
                 .map(resource -> new GenericStack(resource.key(), resource.amount()))
                 .toList();
-    }
-
-    private static void requireAmount(long amount) {
-        if (amount <= 0) {
-            throw JsValues.error("Resource amount must be positive");
-        }
     }
 }
 

@@ -68,7 +68,7 @@ registerProcessingPattern(
 常用全局入口：
 
 - `network(side)`：取得控制器某一面的网络；
-- `item(...)` / `stack(...)`：声明资源规格；
+- `item(...)` / `fluid(...)`：构造常用资源的扁平查询与规格；
 - `registerProcessingPattern(...)`：注册加工样板与订单处理器；
 - `go(...)`：启动独立的 generator workflow；
 - `sleep(ticks)`：创建等待动作；
@@ -253,7 +253,7 @@ if (sword !== undefined) {
 }
 ```
 
-`stack(channel, key, amount)` 使用对应 AEKeyType codec 解码 key，并返回扁平的 `{ channel, ...keyFields, amount }` 规格；`item(id, amount, components?)` 是物品便利形式。返回值可原样复用于 `extract()`、加工样板、`canOrder()` 与 `order()`。`channel`、`amount`、`options` 和 `$` 开头的名称是保留元数据字段，不能同时作为 codec key 字段。`itemNbt()` 只接受 `ae2:i` 资源。
+`item(id, amount?, components?)` 与 `fluid(id, amount?, components?)` 分别构造 `ae2:i` 和 `ae2:f` channel 的扁平对象。它们不解析 ID 或校验字段，因此 `id` 等字符串字段可使用 `*`、`?` 通配。省略 `amount` 时对象是供 `extract()` 使用的不限量查询；提供正数数量和符合 codec 的精确 key 字段后，也可声明加工样板或合成订单。其他 channel 可直接传入扁平字段，例如 `{ channel: "addon:energy", id: "addon:*" }`。查询匹配时，缺失字段不构成限制；`channel` 与 `$tag` 精确匹配。实际转移、注册样板和创建订单时再校验资源规格。需要省略数量但填写组件时使用 `item(id, undefined, components)` 或 `fluid(id, undefined, components)`。`itemNbt()` 只接受 `ae2:i` 资源。
 
 `rename()` 会立即在原来源中以新 key 替换旧 key；资源不足返回 `null`，成功时返回新的来源句柄。
 
@@ -317,7 +317,7 @@ NBT 转换为 JavaScript 对象、数组、字符串和数字。超过 JavaScrip
 
 同样的预编译逻辑也用于 MCP 探测：内联 `code` 被视为 `appliedscripts/` 根目录下的虚拟文件。因此如果确实需要烘培配方，请留下可复用的烘培脚本，方便整合包更新后重新生成数据。
 
-每条配方是 `{ id, type, inputs, outputs, json }`。输入输出使用与 `stack()` 相同的扁平 `{ channel, ...keyFields, amount }` 结构，可直接传给 `extract()` 或 `registerProcessingPattern`。多选 ingredient 槽以自身扁平字段作为代表物，并在 `options` 中保存全部候选。
+每条配方是 `{ id, type, inputs, outputs, json }`。输入输出使用扁平 `{ channel, ...keyFields, amount }` 结构，可直接传给 `extract()` 或 `registerProcessingPattern`。多选 ingredient 槽以自身扁平字段作为代表物，并在 `options` 中保存全部候选。
 
 工作区导出会跳过不适合作为加工样板的配方族：原版合成、切石与锻造，机械动力自动有序/无序合成、自动打包及全部搅拌，Create Dragons Plus 染色，Mekanism 喷涂与颜料处理，以 `_as_coloring` 结尾的配方，以及配方/类型 ID 中含 `copycat`、`facade`、`camo` 或 `mimic` 的伪装配方。
 

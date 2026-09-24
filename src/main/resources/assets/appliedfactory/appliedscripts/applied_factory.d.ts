@@ -51,7 +51,7 @@ interface ResourceQuery {
 interface Resource {
   /** Raw AEKeyType ID; unknown extension channels need no extra interface or adapter. */
   readonly channel: string;
-  /** The channel's own codec NBT, safe to pass back to stack(channel, key, amount). */
+  /** The channel's own codec NBT; spread beside channel to build a flat query. */
   readonly key: NbtCompound;
   /** AEKey ID for display and filtering; not used to rebuild unknown keys. */
   readonly id: string;
@@ -223,7 +223,7 @@ type ResourceTarget = Network | Bus | Slot;
 
 interface PatternDefinition {
   readonly orderNetwork: NetworkSide;
-  /** Flat specs from stack()/item() or Recipe.inputs/Recipe.outputs. */
+  /** Flat specs from item()/fluid() or Recipe.inputs/Recipe.outputs. */
   readonly inputs: readonly ResourceSpec[];
   readonly outputs: readonly ResourceSpec[];
 }
@@ -257,17 +257,30 @@ declare function registerProcessingPattern(
  * MCP execution also captures logs as its return. */
 declare function log(message: string): void;
 
-/** Builds a flat exact item spec reusable by extract(), patterns and crafting orders; components is a 1.21+ data component patch. */
+/** Builds a flat item query/spec without parsing or validating its fields. */
+declare function item(id: string): ResourceQuery;
+declare function item(
+  id: string,
+  amount: undefined,
+  components?: NbtCompound,
+): ResourceQuery;
+/** Adds an optional amount and item components to the flat query/spec. */
 declare function item(
   id: string,
   amount: number,
   components?: NbtCompound,
 ): ResourceSpec;
-/** Builds a reusable flat spec; the key object's fields are lifted beside channel and amount. */
-declare function stack(
-  channel: ResourceChannel,
-  key: NbtCompound,
+/** Builds a flat fluid query/spec without parsing or validating its fields. */
+declare function fluid(id: string): ResourceQuery;
+declare function fluid(
+  id: string,
+  amount: undefined,
+  components?: NbtCompound,
+): ResourceQuery;
+declare function fluid(
+  id: string,
   amount: number,
+  components?: NbtCompound,
 ): ResourceSpec;
 /** Immediately renames in place; throws at runtime when not ae2:i, returns null when resources are insufficient. */
 declare function rename(item: Resource, name: string): Resource | null;
@@ -291,7 +304,7 @@ interface Recipe {
   readonly type: string;
   /** Normalized inputs (the server-side generic extraction covers items only; fluids/chemicals/input counts follow the json). A slot with options means any one of them. */
   readonly inputs: readonly RecipeInput[];
-  /** Normalized primary output, same shape as stack()'s ResourceSpec. */
+  /** Normalized primary output, same flat shape as item()/fluid() specs. */
   readonly outputs: readonly ResourceSpec[];
   /** Raw recipe JSON for read-only reference (complex recipes such as fluids/chemicals/energy/multi-output); null when it cannot be re-encoded. */
   readonly json: Record<string, NbtValue> | null;

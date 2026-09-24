@@ -68,7 +68,7 @@ The upload stage only guarantees that the syntax can be transpiled; full type ch
 Common global entry points:
 
 - `network(side)`: gets the network on one controller side;
-- `item(...)` / `stack(...)`: declare resource specs;
+- `item(...)` / `fluid(...)`: construct common flat resource queries and specs;
 - `registerProcessingPattern(...)`: register processing patterns and order handlers;
 - `go(...)`: start an independent generator workflow;
 - `sleep(ticks)`: create a wait action;
@@ -253,7 +253,7 @@ if (sword !== undefined) {
 }
 ```
 
-`stack(channel, key, amount)` decodes the key with the matching AEKeyType codec and returns a flat `{ channel, ...keyFields, amount }` spec; `item(id, amount, components?)` is the item convenience form. The returned spec can be reused unchanged by `extract()`, processing patterns, `canOrder()` and `order()`. `channel`, `amount`, `options` and `$`-prefixed names are reserved metadata fields and cannot also be codec key fields. `itemNbt()` accepts `ae2:i` resources only.
+`item(id, amount?, components?)` and `fluid(id, amount?, components?)` construct flat objects for the `ae2:i` and `ae2:f` channels. They do not parse IDs or validate fields, so string fields such as `id` can use `*` and `?` globs. Without `amount`, the object is an unbounded query for `extract()`; with a positive amount and codec-valid exact key fields it can also declare a processing pattern or crafting order. Other channels can be queried by passing their flat fields directly, for example `{ channel: "addon:energy", id: "addon:*" }`. Query matching treats missing fields as unconstrained; `channel` and `$tag` are exact. Actual transfers, pattern registration and order creation validate their resource specs at use time. To provide components while omitting the amount, use `item(id, undefined, components)` or `fluid(id, undefined, components)`. `itemNbt()` accepts `ae2:i` resources only.
 
 `rename()` immediately replaces the old key with the new one in the original source; it returns `null` when resources are insufficient, and a new source handle on success.
 
@@ -317,7 +317,7 @@ NBT is converted to JavaScript objects, arrays, strings and numbers. Longs beyon
 
 The same precompile logic is used for MCP probes: inline `code` is treated as a virtual file in the `appliedscripts/` root. So if baked recipes are genuinely needed, leave a reusable baking script so data can be regenerated after the modpack updates.
 
-Each recipe is `{ id, type, inputs, outputs, json }`. Inputs and outputs use the flat `{ channel, ...keyFields, amount }` shape returned by `stack()` and can be passed directly to `extract()` or `registerProcessingPattern`. A multi-choice ingredient slot uses its own flat fields as the representative and keeps every candidate in `options`.
+Each recipe is `{ id, type, inputs, outputs, json }`. Inputs and outputs use the flat `{ channel, ...keyFields, amount }` shape and can be passed directly to `extract()` or `registerProcessingPattern`. A multi-choice ingredient slot uses its own flat fields as the representative and keeps every candidate in `options`.
 
 The workspace exporter omits recipe families that do not make useful processing patterns: vanilla crafting/stonecutting/smithing, Create automatic shaped/shapeless/packing and all mixing, Create Dragons Plus coloring, Mekanism painting/pigment processing, IDs ending in `_as_coloring`, and recipe/type IDs containing `copycat`, `facade`, `camo` or `mimic`.
 
