@@ -13,17 +13,18 @@ import net.neoforged.neoforge.items.IItemHandler;
 /**
  * One exact item slot of an external container exposed as an {@link MEStorage}.
  *
- * <p>The wrapper works directly on the container's whole-inventory handler
- * instead of the accessed face's capability view, so it can move resources
- * through slots the face forbids for input or output.</p>
+ * <p>The selected face handler supplies local slot numbers, contents and transfer
+ * permissions. An unsided handler is used only when the face exposes none.</p>
  */
 final class FactorySlotStorage implements MEStorage {
     private final IItemHandler handler;
     private final int slot;
+    private final boolean extractableOnly;
 
-    FactorySlotStorage(IItemHandler handler, int slot) {
+    FactorySlotStorage(IItemHandler handler, int slot, boolean extractableOnly) {
         this.handler = handler;
         this.slot = slot;
+        this.extractableOnly = extractableOnly;
     }
 
     @Override
@@ -31,8 +32,9 @@ final class FactorySlotStorage implements MEStorage {
         if (!(what instanceof AEItemKey itemKey) || amount <= 0) {
             return 0;
         }
-        var remainder = handler.insertItem(slot, itemKey.toStack(saturated(amount)), mode.isSimulate());
-        return amount - remainder.getCount();
+        var attempted = saturated(amount);
+        var remainder = handler.insertItem(slot, itemKey.toStack(attempted), mode.isSimulate());
+        return attempted - remainder.getCount();
     }
 
     @Override
@@ -54,7 +56,17 @@ final class FactorySlotStorage implements MEStorage {
         }
         var key = AEItemKey.of(stack);
         if (key != null) {
-            out.add(key, stack.getCount());
+            var amount = stack.getCount();
+            if (extractableOnly) {
+                var extracted = handler.extractItem(slot, amount, true);
+                if (!key.matches(extracted)) {
+                    return;
+                }
+                amount = Math.min(amount, extracted.getCount());
+            }
+            if (amount > 0) {
+                out.add(key, amount);
+            }
         }
     }
 

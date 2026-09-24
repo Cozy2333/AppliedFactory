@@ -19,7 +19,7 @@ item_ids:
 
 控制器的每个面都可以连接 AE2 线缆。脚本可以按方向选择这些连接：
 
-- `north/south/east/west/up/down`：世界方向；
+- `north/south/east/west/top/bottom`：控制器绝对面；
 - `front/back/left/right`：以控制器正面为基准的方向。
 
 把工厂总线安装在 AE2 线缆上，并保证它贴在机器上。控制器可检测到一个面上连接的所有工厂总线。

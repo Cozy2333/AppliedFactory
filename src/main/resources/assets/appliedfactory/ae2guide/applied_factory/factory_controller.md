@@ -19,7 +19,7 @@ The Factory Controller operates machines through Factory Buses and provides AE2 
 
 Every face of the controller can connect to AE2 cables. Scripts can select these connections by direction:
 
-- `north/south/east/west/up/down`: world directions;
+- `north/south/east/west/top/bottom`: absolute controller faces;
 - `front/back/left/right`: directions relative to the controller front.
 
 Attach a Factory Bus to an AE2 cable and make sure it touches a machine. The controller can detect all Factory Buses connected on one face.

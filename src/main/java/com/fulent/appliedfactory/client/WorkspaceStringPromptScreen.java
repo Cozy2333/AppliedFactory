@@ -53,7 +53,6 @@ final class WorkspaceStringPromptScreen extends Screen {
                 title);
         editBox.setMaxLength(maxLength);
         editBox.setValue(initial);
-        editBox.setFocused(true);
         addRenderableWidget(editBox);
 
         var buttonY = windowY + WINDOW_HEIGHT - PADDING - BUTTON_HEIGHT;
@@ -63,6 +62,10 @@ final class WorkspaceStringPromptScreen extends Screen {
         addRenderableWidget(new AE2Button(
                 windowX + PADDING + buttonWidth + BUTTON_GAP, buttonY, buttonWidth, BUTTON_HEIGHT,
                 Component.translatable("gui.cancel"), ignored -> finish(null)));
+    }
+
+    @Override
+    protected void setInitialFocus() {
         setInitialFocus(editBox);
     }
 

@@ -79,7 +79,7 @@ registerProcessingPattern(
 
 ### 4.1 面与网络
 
-`network(side)` 接受世界绝对方向 `up/down/north/south/west/east`，也接受相对控制器正面的 `front/back/left/right`。其中左右采用玩家站在正面、看向控制器时的视角。相对方向在创建句柄时解析为绝对面，因此 `network("front").side` 返回实际世界方向。`PatternDefinition.orderNetwork` 使用相同规则。
+`network(side)` 接受控制器绝对面 `top/bottom/north/south/west/east`，也接受相对控制器正面的 `front/back/left/right`。其中左右采用玩家站在正面、看向控制器时的视角。相对方向在创建句柄时解析为绝对面，`network("front").side` 返回实际的控制器面名称。`PatternDefinition.orderNetwork` 使用相同规则。旧脚本中的 `up/down` 仍可运行，但新脚本请使用 `top/bottom`；世界方块的 `Bus.targetFace` 仍使用 `up/down`。
 
 不要用 `===` 比较两个 `Network` 包装对象。要比较它们当前是否属于同一 AE 网格，请使用：
 
@@ -169,32 +169,34 @@ const tagged = network("north").extract({
 
 ### 5.3 `storage()`：目标整体库存快照
 
-`storage(channel?)` 是只读库存查询。对 `Bus` 调用时，它以“无面”方式查看目标方块全部非空槽位，不受总线所贴面的输入输出限制；例如熔炉可以一次看到输入、燃料与输出槽。
+`storage(channel?)` 是只读库存查询。对 `Bus` 调用时，它优先以“无面”方式查看目标方块的库存；如果目标不提供无方向视图，可能退回该面的视图。无方向视图通常能看到输入、燃料与输出等不同槽位。
 
 ```ts
 const contents = furnace.storage();
 const itemContents = furnace.storage("ae2:i");
 ```
 
-`extract()` 适合获取该面实际可取出的资源；`storage()` 适合排查机器卡料或观察在途输入。`storage()` 返回的仍是来源句柄，可以 `.to()`，但不建议对其中可能无法从该面取出的资源调用 `pushExactlyInto()`，否则可能一直等待。
+`extract()` 优先使用总线所贴面的存储句柄，只返回该句柄可提取的资源；若该面没有句柄，才使用无方向句柄或无方向反射回退。`storage()` 适合排查机器卡料或观察在途输入。`storage()` 返回的仍是来源句柄，可以 `.to()`，但不建议对其中可能无法从所选面取出的资源调用 `pushExactlyInto()`，否则可能一直等待。
 
 ### 5.4 单槽句柄 `bus.slot(n)`
 
-`bus.slot(n)` 返回目标容器第 `n` 个物品槽（从 0 开始）的句柄，可绕过所贴面的输入输出限制、直接操作某个槽位：
+`bus.slot(n)` 按当前总线面可见的物品槽位编号（从 0 开始）。换面后，同一编号可能指向不同槽位。输入、提取遵守该句柄的能力：
 
 ```ts
-const output = furnaceBus.slot(2);        // 熔炉输出槽
-const ingots = output.extract();          // 只取该槽内的物品
+const output = furnaceBus.slot(0);        // 选择当前总线面显示的槽位
+const ingots = output.extract();          // 只列出该槽可取出的物品
 yield ingots.to(order.network);
 yield someResource.pushExactlyInto(output);
 ```
 
-- 索引按目标方块的完整物品栏（`ae2:i`）解析，与总线所贴面无关；熔炉的输入/燃料槽等通常无法从该面取出，但可以通过 `slot()` 直接访问；
+- 槽位和编号来自当前面的物品句柄；该面没有句柄时，改用无方向能力或完整物品栏的反射回退；
+- 编号只在所选句柄内有效。更换总线面后，应重新查看游戏中显示的槽位；
+- `slot.extract()` 仅返回句柄模拟提取成功的数量；`slot.storage()` 仍可查看该槽的完整内容；作为目标输入时也遵守句柄的插入规则；
 - 槽位句柄只覆盖物品，传入其他 channel 的查询返回空数组；
 - `exists` 表示总线可解析且槽位编号有效；越界或总线被拆除后，相关转移动作会像资源不存在一样保持等待；
 - 作为转移目标时只向该槽位插入；目标槽已满或物品不兼容时保持等待；
 - 由 `slot.extract()` 得到的资源 `origin.kind` 为 `"slot"`，`origin.endpoint` 是该槽位句柄；
-- 游戏中把准星指向工厂总线时，Jade 会以物品图标逐槽列出该容器全部物品槽位（空槽显示为空），WTHIT / The One Probe 则以文本列出；编号与 `slot(n)` 一致。
+- 游戏中把准星指向工厂总线时，Jade 会以物品图标逐槽列出当前面可见的物品槽位（空槽显示为空），WTHIT / The One Probe 则以文本列出；编号与该面的 `slot(n)` 一致。
 
 ## 6. Action 与资源转移
 

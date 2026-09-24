@@ -79,7 +79,7 @@ Common global entry points:
 
 ### 4.1 Sides and networks
 
-`network(side)` accepts the absolute world directions `up/down/north/south/west/east`, and the directions `front/back/left/right` relative to the controller front. Left and right use the perspective of a player standing in front and looking at the controller. Relative directions are resolved to absolute faces when the handle is created, so `network("front").side` returns the actual world direction. `PatternDefinition.orderNetwork` follows the same rules.
+`network(side)` accepts controller faces `top/bottom/north/south/west/east` and `front/back/left/right` relative to the controller front. Left and right use the perspective of a player standing in front and looking at the controller. Relative directions resolve to absolute faces when the handle is created, so `network("front").side` returns the actual controller face name. `PatternDefinition.orderNetwork` follows the same rules. Existing scripts using `up/down` still run, but new scripts should use `top/bottom`; `Bus.targetFace` still uses the world directions `up/down`.
 
 Do not compare two `Network` wrapper objects with `===`. To compare whether they currently belong to the same AE grid, use:
 
@@ -169,32 +169,34 @@ const tagged = network("north").extract({
 
 ### 5.3 `storage()`: whole-target inventory snapshot
 
-`storage(channel?)` is a read-only inventory query. On a `Bus` it views every non-empty slot of the target with no face, independent of the bus face's input/output restrictions; for example a furnace exposes its input, fuel and output slots at once.
+`storage(channel?)` is a read-only inventory query. On a `Bus` it prefers the target's unsided view; if that view is unavailable, it may fall back to the bus face. An unsided view can expose input, fuel, and output slots together.
 
 ```ts
 const contents = furnace.storage();
 const itemContents = furnace.storage("ae2:i");
 ```
 
-`extract()` is suited to getting what the face can actually extract; `storage()` is suited to diagnosing machine jams or observing in-flight inputs. `storage()` still returns source handles and can `.to()`, but calling `pushExactlyInto()` on resources that may not be extractable from that face is not recommended, since it may wait forever.
+`extract()` prefers the storage handle for the bus face and returns only resources that handle can extract. If the face has no handle, it tries an unsided capability or reflected inventory. `storage()` is suited to diagnosing machine jams or observing in-flight inputs. Its results are still source handles, but trying to transfer entries unavailable through the selected face can wait indefinitely.
 
 ### 5.4 Single-slot handles `bus.slot(n)`
 
-`bus.slot(n)` returns a handle to the target container's `n`-th item slot (0-based), which can bypass the face's input/output restrictions and operate on one slot directly:
+`bus.slot(n)` uses the item slots exposed to this bus face, numbered from 0. Changing the bus face can change which slot a number refers to. Insertion and extraction follow that handler's permissions:
 
 ```ts
-const output = furnaceBus.slot(2);        // furnace output slot
-const ingots = output.extract();          // take only the items in that slot
+const output = furnaceBus.slot(0);        // select a slot shown for this bus face
+const ingots = output.extract();          // only items extractable from this slot
 yield ingots.to(order.network);
 yield someResource.pushExactlyInto(output);
 ```
 
-- The index is resolved against the target block's whole item inventory (`ae2:i`), independent of the bus face; a furnace's input/fuel slots usually cannot be extracted from that face, but are directly accessible through `slot()`;
+- The face's item handler supplies the slots and their numbers. If the face has no handler, an unsided capability or complete reflected inventory supplies them instead;
+- Numbers are local to the selected handler. Check the slots shown on the bus after changing its face;
+- `slot.extract()` returns only the amount the handler can simulate extracting, while `slot.storage()` still shows the slot's full contents. Insertion also follows the handler's rules;
 - Slot handles cover items only; queries with another channel return an empty array;
 - `exists` means the bus resolves and the slot number is valid; when out of range or after the bus is removed, related transfer actions keep waiting as if the resource did not exist;
 - As a transfer target it inserts only into that slot; it keeps waiting when the slot is full or the item is incompatible;
 - A resource obtained from `slot.extract()` has `origin.kind` of `"slot"`, and `origin.endpoint` is that slot handle;
-- In game, pointing at a Factory Bus makes Jade list every item slot of the container as item icons (empty slots shown as empty), while WTHIT / The One Probe show a text list; the numbering matches `slot(n)`.
+- In game, pointing at a Factory Bus makes Jade list the visible item slots as icons (empty slots shown as empty), while WTHIT / The One Probe show text; the numbering matches `slot(n)` for that face.
 
 ## 6. Actions and resource transfers
 

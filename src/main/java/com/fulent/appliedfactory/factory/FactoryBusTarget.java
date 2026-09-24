@@ -408,7 +408,7 @@ public final class FactoryBusTarget {
         }
         var strategy = strategies(serverLevel).get(type);
         var wrapper = strategy == null ? null : strategy.createWrapper(true, NO_CHANGE_LISTENER);
-        return wrapper != null ? wrapper : fallbackItemStorage(type, true);
+        return wrapper != null ? wrapper : fallbackItemStorage(type, true, false);
     }
 
     /**
@@ -420,16 +420,14 @@ public final class FactoryBusTarget {
         if (!(level instanceof ServerLevel serverLevel) || !isLoaded()) {
             return Map.of();
         }
-        return withItemFallback(createWrappers(strategies(serverLevel), true), true);
+        return withItemFallback(createWrappers(strategies(serverLevel), true), true, false);
     }
 
     /**
-     * Same as {@link #storage(AEKeyType)} but the wrapper is built from
-     * strategies queried with a {@code null} side, so it exposes the target
-     * block's <em>whole container</em> instead of the single face's slot subset:
-     * e.g. a furnace lists input, fuel and output slots regardless of which face
-     * the bus touches. Extraction from slots that reject it still returns 0 —
-     * the wrapper only exists for read-only inspection.
+     * Same as {@link #storage(AEKeyType)} but prefers strategies queried with a
+     * {@code null} side to inspect the whole container. A strategy that rejects
+     * unsided access falls back to the bus face. This is an inspection view;
+     * extraction from a slot that rejects it still returns 0.
      */
     @Nullable
     public MEStorage storageAll(AEKeyType type) {
@@ -438,15 +436,15 @@ public final class FactoryBusTarget {
         }
         var strategy = allStrategies(serverLevel).get(type);
         var wrapper = strategy == null ? null : strategy.createWrapper(false, NO_CHANGE_LISTENER);
-        return wrapper != null ? wrapper : fallbackItemStorage(type, false);
+        return wrapper != null ? wrapper : fallbackItemStorage(type, false, true);
     }
 
-    /** Resolves every whole-container storage in one wrapper pass. */
+    /** Resolves every inspection storage in one wrapper pass. */
     public Map<AEKeyType, MEStorage> storagesAll() {
         if (!(level instanceof ServerLevel serverLevel) || !isLoaded()) {
             return Map.of();
         }
-        return withItemFallback(createWrappers(allStrategies(serverLevel), false), false);
+        return withItemFallback(createWrappers(allStrategies(serverLevel), false), false, true);
     }
 
     /**
@@ -466,43 +464,50 @@ public final class FactoryBusTarget {
 
     // ---- Per-slot access ----------------------------------------------------
 
-    /**
-     * The target block's whole-container item handler, or null when the target
-     * exposes no item storage. Using the whole container as context is what lets
-     * a slot handle bypass the accessed face's input/output capability filters.
-     *
-     * <p>Tries the null-side capability first, then the accessed face, then a
-     * reflective fallback so machines that never register the item capability
-     * (e.g. Forbidden Arcanus' altar and other Valhelsia machines) still work.</p>
-     */
+    /** The item handler visible from this bus face, or its unsided fallback. */
     @Nullable
     public IItemHandler itemHandler() {
+        var face = faceItemHandler();
+        return face != null ? face : unsidedItemHandler();
+    }
+
+    @Nullable
+    private IItemHandler unsidedItemHandler() {
         if (!(level instanceof ServerLevel serverLevel) || !isLoaded()) {
             return null;
         }
         var handler = serverLevel.getCapability(Capabilities.ItemHandler.BLOCK, position, null);
-        if (handler == null) {
-            handler = serverLevel.getCapability(Capabilities.ItemHandler.BLOCK, position, targetFace());
-        }
-        if (handler == null) {
-            handler = FactoryItemHandlerResolver.resolve(serverLevel.getBlockEntity(position));
-        }
-        return handler;
+        return handler != null
+                ? handler
+                : FactoryItemHandlerResolver.resolve(serverLevel.getBlockEntity(position));
     }
 
-    /** Number of item slots in the target's whole container, or 0 when unavailable. */
+    @Nullable
+    private IItemHandler faceItemHandler() {
+        if (!(level instanceof ServerLevel serverLevel) || !isLoaded()) {
+            return null;
+        }
+        return serverLevel.getCapability(Capabilities.ItemHandler.BLOCK, position, targetFace());
+    }
+
+    @Nullable
+    private IItemHandler storageItemHandler(boolean wholeContainer) {
+        if (!wholeContainer) {
+            return itemHandler();
+        }
+        var unsided = unsidedItemHandler();
+        return unsided != null ? unsided : faceItemHandler();
+    }
+
+    /** Number of slots exposed to this bus face. */
     public int itemSlotCount() {
         var handler = itemHandler();
         return handler == null ? 0 : handler.getSlots();
     }
 
-    /**
-     * One exact slot of the target's whole container as an {@link MEStorage}, or
-     * null for non-item channels and out-of-range slots. The returned wrapper
-     * ignores the accessed face's capability restrictions.
-     */
+    /** One slot of the handler visible from this bus face. */
     @Nullable
-    public MEStorage slotStorage(AEKeyType type, int slot) {
+    public MEStorage slotStorage(AEKeyType type, int slot, boolean extractableOnly) {
         if (!type.equals(AEKeyType.items()) || slot < 0) {
             return null;
         }
@@ -510,7 +515,7 @@ public final class FactoryBusTarget {
         if (handler == null || slot >= handler.getSlots()) {
             return null;
         }
-        return new FactorySlotStorage(handler, slot);
+        return new FactorySlotStorage(handler, slot, extractableOnly);
     }
 
     private static Map<AEKeyType, MEStorage> createWrappers(
@@ -527,15 +532,16 @@ public final class FactoryBusTarget {
     }
 
     /**
-     * Adds the reflective item-handler fallback to a resolved channel map when
-     * AE2's strategy registry found no item storage on this target.
+     * Adds an item-handler fallback when AE2's strategy registry found no item
+     * storage on this target.
      */
     private Map<AEKeyType, MEStorage> withItemFallback(
-            Map<AEKeyType, MEStorage> wrappers, boolean extractableOnly) {
+            Map<AEKeyType, MEStorage> wrappers, boolean extractableOnly,
+            boolean wholeContainer) {
         if (wrappers.containsKey(AEKeyType.items())) {
             return wrappers;
         }
-        var fallback = fallbackItemStorage(AEKeyType.items(), extractableOnly);
+        var fallback = fallbackItemStorage(AEKeyType.items(), extractableOnly, wholeContainer);
         if (fallback == null) {
             return wrappers;
         }
@@ -545,16 +551,16 @@ public final class FactoryBusTarget {
     }
 
     /**
-     * Wraps the reflectively resolved item handler as an {@link MEStorage} for
-     * mods that expose an item handler but never register the block capability.
-     * Only the item channel is covered.
+     * Wraps the selected capability or reflected item handler as an
+     * {@link MEStorage}. Only the item channel is covered.
      */
     @Nullable
-    private MEStorage fallbackItemStorage(AEKeyType type, boolean extractableOnly) {
+    private MEStorage fallbackItemStorage(
+            AEKeyType type, boolean extractableOnly, boolean wholeContainer) {
         if (!type.equals(AEKeyType.items())) {
             return null;
         }
-        var handler = itemHandler();
+        var handler = storageItemHandler(wholeContainer);
         if (handler == null) {
             return null;
         }

@@ -7,8 +7,9 @@
  */
 
 type Direction = "up" | "down" | "north" | "south" | "west" | "east";
+type NetworkDirection = "top" | "bottom" | "north" | "south" | "west" | "east";
 type RelativeDirection = "front" | "back" | "left" | "right";
-type NetworkSide = Direction | RelativeDirection;
+type NetworkSide = NetworkDirection | RelativeDirection;
 type NbtValue =
   | string
   | number
@@ -129,8 +130,8 @@ interface Bus {
   extract(): ResourceArray;
   extract(query: ResourceQuery): ResourceArray;
   /**
-   * 只读库存查询：返回目标方块**全部库存**（所有槽位，不受总线所贴面的限制，
-   * 含取不出的输入槽），恒返回 ResourceArray，无内容时为空数组；可传 channel 过滤。
+   * 只读库存查询：优先使用目标方块的无方向视图；没有时可能退回总线所贴面。
+   * 包含所选视图中不可提取的物品，恒返回 ResourceArray；可传 channel 过滤。
    * 结果可转成 Action，但不可取出的条目在执行时与"不存在"共享语义（转移等待）。
    */
   storage(): ResourceArray;
@@ -158,21 +159,22 @@ interface Bus {
    */
   break(tool: Resource, dropTarget?: ResourceTarget): BlockBreakResult;
   /**
-   * 获取目标容器（ae2:i 物品栏）指定编号槽位的句柄，索引从 0 开始，按容器完整物品栏
-   * 解析，不受总线所贴面的输入输出限制。槽位句柄可 extract()/storage()，也可作为
-   * to()/pushExactlyInto() 的目标。索引越界时句柄 exists 为 false，相关操作保持等待。
+   * 按当前总线面的物品句柄取得局部槽位编号，换面后同一编号可能指向不同槽位。
+   * 当前面没有物品句柄时，使用无方向能力或完整物品栏的反射回退。
+   * 槽位句柄可 extract()/storage()，也可作为 to()/pushExactlyInto() 的目标。
+   * 索引越界时句柄 exists 为 false，相关操作保持等待。
    */
   slot(index: number): Slot;
 }
 
-/** `bus.slot(index)` 返回的单个物品槽句柄；直接操作该槽，绕过所贴面的输入输出能力限制。 */
+/** `bus.slot(index)` 返回的当前面局部编号单槽句柄；提取和输入遵守该句柄的能力。 */
 interface Slot {
-  /** 容器中的槽位编号，从 0 开始。 */
+  /** 当前所选句柄内的槽位编号，从 0 开始。 */
   readonly index: number;
-  /** 总线在当前网格中可解析，且目标容器确实拥有该编号槽位。 */
+  /** 总线可解析，且当前所选物品句柄存在该槽位。 */
   readonly exists: boolean;
 
-  /** 与 Bus/Network 相同的扁平部分 key 查询，但只针对该 ae2:i 槽位。 */
+  /** 只返回该 ae2:i 槽位可实际提取的物品。 */
   extract(): ResourceArray;
   extract(query: ResourceQuery): ResourceArray;
   /** 只读查询该槽位当前内容；恒返回 ResourceArray。 */
@@ -181,8 +183,8 @@ interface Slot {
 }
 
 interface Network {
-  /** 解析后的世界绝对方向；相对选择器不会保留在此字段中。 */
-  readonly side: Direction;
+  /** 解析后的控制器绝对面；垂直面使用 top/bottom。 */
+  readonly side: NetworkDirection;
   readonly online: boolean;
   /** 当前拓扑快照，每次读取都重新枚举。 */
   readonly buses: readonly Bus[];

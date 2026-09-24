@@ -10,8 +10,9 @@
  */
 
 type Direction = "up" | "down" | "north" | "south" | "west" | "east";
+type NetworkDirection = "top" | "bottom" | "north" | "south" | "west" | "east";
 type RelativeDirection = "front" | "back" | "left" | "right";
-type NetworkSide = Direction | RelativeDirection;
+type NetworkSide = NetworkDirection | RelativeDirection;
 type NbtValue =
   | string
   | number
@@ -135,9 +136,9 @@ interface Bus {
   extract(): ResourceArray;
   extract(query: ResourceQuery): ResourceArray;
   /**
-   * Read-only inventory query: returns the target block's **whole inventory**
-   * (every slot, regardless of the bus face, including input slots that cannot
-   * be extracted), always a ResourceArray, empty when there is nothing. Accepts
+   * Read-only inventory query: prefers the target's unsided view, falling back
+   * to the bus face when unavailable. Includes non-extractable contents of the
+   * selected view. Always a ResourceArray, empty when there is nothing. Accepts
    * a channel filter. The result can be turned into an Action, but entries that
    * cannot be extracted share the semantics of "absent" at execution time (the
    * transfer waits).
@@ -170,24 +171,23 @@ interface Bus {
    */
   break(tool: Resource, dropTarget?: ResourceTarget): BlockBreakResult;
   /**
-   * Gets a handle to the numbered slot of the target container (ae2:i inventory).
-   * The index is 0-based and resolved against the container's whole inventory,
-   * ignoring the bus face's input/output restrictions. The slot handle can
-   * extract()/storage(), and can be used as the target of to()/pushExactlyInto().
+   * Gets a slot numbered within this bus face's item handler. Changing the face
+   * can change which slot an index selects. When the face has no item handler,
+   * an unsided capability or complete reflected inventory supplies the slots.
    * When the index is out of range the handle's exists is false and related
    * operations keep waiting.
    */
   slot(index: number): Slot;
 }
 
-/** A single item-slot handle returned by `bus.slot(index)`; operates directly on that slot, bypassing the face's input/output capability restrictions. */
+/** An item slot selected by its index in the current bus-face handler. */
 interface Slot {
-  /** Slot number in the container, 0-based. */
+  /** Slot number in the selected handler, 0-based. */
   readonly index: number;
-  /** The bus resolves on its grid and the target container actually has this slot. */
+  /** The bus resolves and its selected item handler has this slot. */
   readonly exists: boolean;
 
-  /** Same flat partial-key query as Bus/Network, but only for this ae2:i slot. */
+  /** Queries only the amount this ae2:i slot can actually extract. */
   extract(): ResourceArray;
   extract(query: ResourceQuery): ResourceArray;
   /** Read-only query of this slot's current contents; always a ResourceArray. */
@@ -196,8 +196,8 @@ interface Slot {
 }
 
 interface Network {
-  /** Resolved absolute world direction; relative selectors are not preserved here. */
-  readonly side: Direction;
+  /** Resolved absolute controller face; vertical faces use top/bottom. */
+  readonly side: NetworkDirection;
   readonly online: boolean;
   /** Current topology snapshot, re-enumerated on every read. */
   readonly buses: readonly Bus[];

@@ -34,7 +34,7 @@ public record FactoryEndpoint(
         return new FactoryEndpoint(Kind.BUS, null, Objects.requireNonNull(address), -1);
     }
 
-    /** One exact item slot of a bus target, ignoring the accessed face's capability filters. */
+    /** One item slot numbered within a bus target's selected face handler. */
     public static FactoryEndpoint itemSlot(FactoryBusAddress address, int index) {
         return new FactoryEndpoint(Kind.SLOT, null, Objects.requireNonNull(address), index);
     }

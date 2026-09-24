@@ -587,6 +587,13 @@ final class ScriptApi {
     }
 
     Direction networkSide(String value) {
+        if ("top".equals(value)) {
+            return Direction.UP;
+        }
+        if ("bottom".equals(value)) {
+            return Direction.DOWN;
+        }
+        // Keep reading older saved scripts that used Minecraft's world names.
         var absolute = Direction.byName(value);
         if (absolute != null) {
             return absolute;
@@ -731,7 +738,11 @@ final class JsNetwork {
 
     @JsProperty
     public String getSide() {
-        return side.getName();
+        return switch (side) {
+            case UP -> "top";
+            case DOWN -> "bottom";
+            default -> side.getName();
+        };
     }
 
     @JsProperty
@@ -877,9 +888,8 @@ final class JsBus {
     }
 
     /**
-     * A handle to one exact item slot of this bus's target container. The slot
-     * can be used for {@code extract()}, as a transfer target and directly,
-     * bypassing the accessed face's input/output capability filters.
+     * A handle to one locally numbered slot of the target's bus-face handler.
+     * If the face has no handler, the unsided handler supplies the slots.
      */
     public JsSlot slot(Object rawIndex) {
         var number = JsValues.number(rawIndex, "bus.slot index");

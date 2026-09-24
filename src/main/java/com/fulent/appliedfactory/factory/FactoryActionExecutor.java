@@ -129,7 +129,7 @@ public final class FactoryActionExecutor {
         if (endpoint.kind() == FactoryEndpoint.Kind.NETWORK) {
             collectNetwork(amounts, endpoint);
         } else if (endpoint.kind() == FactoryEndpoint.Kind.SLOT) {
-            var storage = slotStorage(endpoint, channel);
+            var storage = slotStorage(endpoint, channel, true);
             if (storage != null) {
                 collect(storage, amounts);
             }
@@ -152,12 +152,11 @@ public final class FactoryActionExecutor {
     }
 
     /**
-     * Current full contents of an external endpoint: for a bus target, the
-     * block's <em>whole container</em> (all slots, queried without a face), so
-     * machine inputs that reject extraction are visible too. Network endpoints
-     * have no such slots, so this equals {@link #available(FactoryEndpoint)}
-     * there. Actions created from non-extractable entries wait exactly like
-     * entries that do not exist.
+     * Current inspection contents of an external endpoint. Bus targets prefer
+     * an unsided whole-container view and fall back to the face when unavailable;
+     * non-extractable entries remain visible. Network endpoints have no such
+     * slots, so this equals {@link #available(FactoryEndpoint)} there. Actions
+     * created from non-extractable entries wait like absent resources.
      */
     public List<FactoryResource> storage(FactoryEndpoint endpoint) {
         return storage(endpoint, null);
@@ -170,7 +169,7 @@ public final class FactoryActionExecutor {
         if (endpoint.kind() == FactoryEndpoint.Kind.NETWORK) {
             collectNetwork(amounts, endpoint);
         } else if (endpoint.kind() == FactoryEndpoint.Kind.SLOT) {
-            var storage = slotStorage(endpoint, channel);
+            var storage = slotStorage(endpoint, channel, false);
             if (storage != null) {
                 collect(storage, amounts);
             }
@@ -757,7 +756,8 @@ public final class FactoryActionExecutor {
                 return null;
             }
             var bus = busResolver.resolve(endpoint.bus()).orElse(null);
-            var storage = bus == null ? null : bus.slotStorage(AEKeyType.items(), endpoint.slotIndex());
+            var storage = bus == null ? null
+                    : bus.slotStorage(AEKeyType.items(), endpoint.slotIndex(), false);
             return storage == null ? null : new MeStorageAccess(storage, BUS_SOURCE);
         }
         var bus = busResolver.resolve(endpoint.bus()).orElse(null);
@@ -774,12 +774,14 @@ public final class FactoryActionExecutor {
      * empty.
      */
     @Nullable
-    private MEStorage slotStorage(FactoryEndpoint endpoint, @Nullable AEKeyType channel) {
+    private MEStorage slotStorage(
+            FactoryEndpoint endpoint, @Nullable AEKeyType channel, boolean extractableOnly) {
         if (channel != null && !channel.equals(AEKeyType.items())) {
             return null;
         }
         var bus = busResolver.resolve(endpoint.bus()).orElse(null);
-        return bus == null ? null : bus.slotStorage(AEKeyType.items(), endpoint.slotIndex());
+        return bus == null ? null
+                : bus.slotStorage(AEKeyType.items(), endpoint.slotIndex(), extractableOnly);
     }
 
     private static void collect(MEStorage storage, LinkedHashMap<AEKey, Long> amounts) {
