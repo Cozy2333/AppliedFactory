@@ -6,7 +6,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
 
-import com.fulent.appliedfactory.mcp.McpBinding;
 import com.fulent.appliedfactory.mcp.McpClientManager;
 import com.fulent.appliedfactory.mcp.McpToolException;
 import com.fulent.appliedfactory.mcp.ScriptBundler;
@@ -19,15 +18,18 @@ import com.google.gson.JsonParser;
 
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * Client-side, GUI-independent auto-reload session. It watches the workspace backup
- * behind the bound controller's live program and re-uploads it when the file changes,
- * so edits made outside the game keep applying even after the editor is closed. The
- * on/off toggle is a persistent client setting.
+ * behind a controller's live program and re-uploads it when the file changes, so edits
+ * made outside the game keep applying even after the editor is closed. The target
+ * controller is remembered from either the editor GUI or an MCP binding, so the feature
+ * works both for manual editing and for coding agents. The on/off toggle is a persistent
+ * client setting.
  */
 public final class ClientProgramWatcher {
     private static final ClientProgramWatcher INSTANCE = new ClientProgramWatcher();
@@ -35,8 +37,11 @@ public final class ClientProgramWatcher {
 
     private boolean settingLoaded;
     private boolean autoReload;
+    private BlockPos controllerPos;
+    private String controllerDimension = "";
     private String trackedPath = "";
     private String resolvedPath = "";
+    private String syncedProgramPath = "";
     private long watchedModifiedAt = -1L;
     private long dueAt = -1L;
     private UUID pendingRequestId;
@@ -64,6 +69,30 @@ public final class ClientProgramWatcher {
         resync();
     }
 
+    /** The workspace file currently being watched, or blank when none. */
+    public String watchedPath() {
+        return resolvedPath;
+    }
+
+    /**
+     * Points the watcher at a controller and the workspace file backing its live
+     * program. Called from the editor GUI (manual use) and from the MCP binding
+     * (agent use); the last caller wins.
+     */
+    public void watchTarget(BlockPos pos, String dimension, String programPath) {
+        if (pos == null || dimension == null || dimension.isBlank()) {
+            return;
+        }
+        controllerPos = pos;
+        controllerDimension = dimension;
+        var program = programPath == null ? "" : programPath;
+        var programChanged = !program.equals(syncedProgramPath);
+        syncedProgramPath = program;
+        if (!program.isBlank() && (programChanged || resolvedPath.isBlank())) {
+            track(program);
+        }
+    }
+
     /** Sets the workspace backup the watcher follows; blank disables watching. */
     public void track(String relativePath) {
         trackedPath = relativePath == null ? "" : relativePath;
@@ -71,8 +100,11 @@ public final class ClientProgramWatcher {
     }
 
     public void reset() {
+        controllerPos = null;
+        controllerDimension = "";
         trackedPath = "";
         resolvedPath = "";
+        syncedProgramPath = "";
         watchedModifiedAt = -1L;
         dueAt = -1L;
         pendingRequestId = null;
@@ -84,15 +116,21 @@ public final class ClientProgramWatcher {
             return;
         }
         var minecraft = Minecraft.getInstance();
-        var binding = McpClientManager.get().binding();
-        if (minecraft.level == null || minecraft.player == null || binding == null) {
+        if (minecraft.level == null || minecraft.player == null) {
             return;
+        }
+        syncFromBinding();
+        if (controllerPos == null || controllerDimension.isBlank()) {
+            return;
+        }
+        if (!controllerDimension.equals(minecraft.level.dimension().location().toString())) {
+            return;
+        }
+        if (resolvedPath.isBlank() && !syncedProgramPath.isBlank()) {
+            track(syncedProgramPath);
         }
         if (pendingRequestId != null || resolvedPath.isBlank()
                 || !ScriptWorkspaceFiles.exists(resolvedPath)) {
-            return;
-        }
-        if (!binding.dimension().equals(minecraft.level.dimension().location().toString())) {
             return;
         }
         try {
@@ -106,7 +144,7 @@ public final class ClientProgramWatcher {
                 return;
             }
             dueAt = -1L;
-            upload(minecraft, binding);
+            upload(minecraft);
         } catch (IOException | IllegalArgumentException exception) {
             dueAt = -1L;
         }
@@ -125,10 +163,10 @@ public final class ClientProgramWatcher {
             return;
         }
         McpClientManager.get().updateProgramPath(uploadedPath);
-        notify(minecraft, "Auto-reloaded " + uploadedPath + " onto the bound controller");
+        notify(minecraft, "Auto-reloaded " + uploadedPath + " onto the watched controller");
     }
 
-    private void upload(Minecraft minecraft, McpBinding binding) {
+    private void upload(Minecraft minecraft) {
         String source;
         String compiled;
         try {
@@ -148,7 +186,16 @@ public final class ClientProgramWatcher {
         pendingRequestId = requestId;
         pendingPath = resolvedPath;
         PacketDistributor.sendToServer(new SaveControllerProgramPayload(
-                requestId, binding.pos(), source, compiled, resolvedPath));
+                requestId, controllerPos, source, compiled, resolvedPath));
+    }
+
+    private void syncFromBinding() {
+        var binding = McpClientManager.get().binding();
+        if (binding == null) {
+            return;
+        }
+        watchTarget(binding.pos(), binding.dimension(),
+                binding.programPath() == null ? "" : binding.programPath());
     }
 
     private void resync() {

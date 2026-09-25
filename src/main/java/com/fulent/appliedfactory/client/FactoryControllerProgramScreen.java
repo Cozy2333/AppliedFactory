@@ -84,6 +84,7 @@ public final class FactoryControllerProgramScreen
         imageWidth = Math.min(MAX_WIDTH, width - 20);
         imageHeight = Math.min(MAX_HEIGHT, height - 20);
         super.init();
+        ClientProgramWatcher.get().watchTarget(menu.getBlockPos(), currentDimension(), remotePath);
 
         filesWidth = Math.min(MAX_FILES_WIDTH, Math.max(156, imageWidth / 4 + 10));
         var editorX = leftPos + filesWidth + MARGIN * 2;
@@ -567,6 +568,8 @@ public final class FactoryControllerProgramScreen
             remotePath = pendingUploadPath;
             remoteUpdatedAt = payload.updatedAt();
             McpClientManager.get().updateProgramPath(pendingUploadPath);
+            ClientProgramWatcher.get().watchTarget(
+                    menu.getBlockPos(), currentDimension(), pendingUploadPath);
             setStatus("gui.appliedfactory.save_success", FactoryGuiTheme.SUCCESS);
         } else {
             setStatus("gui.appliedfactory.syntax_error", FactoryGuiTheme.ERROR, payload.message());
@@ -585,6 +588,8 @@ public final class FactoryControllerProgramScreen
         remoteSource = payload.source();
         remotePath = payload.workspacePath();
         remoteUpdatedAt = payload.updatedAt();
+        ClientProgramWatcher.get().watchTarget(
+                menu.getBlockPos(), currentDimension(), remotePath);
         if (selectedPath != null) {
             reloadWorkspaceFiles();
             updateButtonStates();
@@ -731,6 +736,11 @@ public final class FactoryControllerProgramScreen
                 graphics.renderTooltip(font, tooltip, mouseX, mouseY);
             }
         }
+    }
+
+    private String currentDimension() {
+        var level = minecraft.level;
+        return level == null ? "" : level.dimension().location().toString();
     }
 
     private String currentFileName() {

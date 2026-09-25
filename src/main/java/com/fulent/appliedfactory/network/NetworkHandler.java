@@ -191,14 +191,17 @@ public final class NetworkHandler {
         if (!(context.player() instanceof ServerPlayer player)) {
             return;
         }
-        var factory = player.level().getBlockEntity(payload.pos());
-        if (!(factory instanceof FactoryControllerBlockEntity controller)
-                || controller.getBlockPos().distSqr(player.blockPosition()) > 64) {
+        if (!(player.level() instanceof ServerLevel level) || !level.isLoaded(payload.pos())) {
             PacketDistributor.sendToPlayer(player, new McpBindResultPayload(
                     payload.requestId(), payload.pos(), false, "", "", ""));
             return;
         }
-        var dimension = player.level().dimension().location().toString();
+        if (!(level.getBlockEntity(payload.pos()) instanceof FactoryControllerBlockEntity controller)) {
+            PacketDistributor.sendToPlayer(player, new McpBindResultPayload(
+                    payload.requestId(), payload.pos(), false, "", "", ""));
+            return;
+        }
+        var dimension = level.dimension().location().toString();
         var label = "factory@" + payload.pos().toShortString();
         PacketDistributor.sendToPlayer(player, new McpBindResultPayload(
                 payload.requestId(), payload.pos(), true, dimension, label,
@@ -229,8 +232,7 @@ public final class NetworkHandler {
 
     private static FactoryControllerBlockEntity controllerFor(
             BlockPos pos, IPayloadContext context) {
-        if (!(context.player() instanceof ServerPlayer player)
-                || player.blockPosition().distSqr(pos) > 64) {
+        if (!(context.player() instanceof ServerPlayer player)) {
             return null;
         }
         // While the editor is open the menu is the authoritative link. Background
@@ -242,7 +244,10 @@ public final class NetworkHandler {
                 return factory;
             }
         }
-        return player.level().getBlockEntity(pos) instanceof FactoryControllerBlockEntity controller
+        if (!(player.level() instanceof ServerLevel level) || !level.isLoaded(pos)) {
+            return null;
+        }
+        return level.getBlockEntity(pos) instanceof FactoryControllerBlockEntity controller
                 ? controller : null;
     }
 

@@ -8,7 +8,7 @@ object in the docs.
 
 ## Tools
 
-- `appliedfactory_status` — read-only status (connection, MCP server port, bound controller coordinates and its current script file, `workspace` path, auto-reload toggle).
+- `appliedfactory_status` — read-only status (connection, MCP server port, bound controller coordinates and its current script file, `workspace` path, auto-reload toggle). When auto-reload is on, saving the controller's `programPath` in the workspace recompiles and re-uploads it automatically: edit that file instead of calling `appliedfactory_upload` again.
 - `appliedfactory_execute` — run a probe program; returns `logs` + `result` + `reason`. Main tool.
 - `appliedfactory_upload` — compile and replace the controller's production program from a real workspace `file` (compile-checked; on failure the existing program is untouched). Uploading must provide a local file so the controller GUI keeps an editable backup.
 

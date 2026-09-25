@@ -3,7 +3,7 @@
 
 ## 工具
 
-- `appliedfactory_status` — 只读状态（连接、MCP 服务端口、已绑定控制器坐标及其当前脚本文件、`workspace` 路径、自动重载开关）。
+- `appliedfactory_status` — 只读状态（连接、MCP 服务端口、已绑定控制器坐标及其当前脚本文件、`workspace` 路径、自动重载开关）。自动重载开启时，保存工作区中控制器的 `programPath` 会自动重新编译并上传：直接编辑该文件即可，无需再次调用 `appliedfactory_upload`。
 - `appliedfactory_execute` — 运行探测程序；返回 `logs` + `result` + `reason`。主要工具。
 - `appliedfactory_upload` — 从真实的工作区 `file` 编译并替换控制器的正式程序（编译检查；失败时原程序保持不变）。上传必须提供本地文件，以便控制器 GUI 保留可编辑的备份。
 

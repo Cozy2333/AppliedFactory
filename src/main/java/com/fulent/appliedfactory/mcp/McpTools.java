@@ -228,7 +228,16 @@ public final class McpTools {
         } else {
             inner.addProperty("bound", false);
         }
-        inner.addProperty("autoReload", ClientProgramWatcher.get().isAutoReload());
+        var watcher = ClientProgramWatcher.get();
+        inner.addProperty("autoReload", watcher.isAutoReload());
+        var watchedPath = watcher.watchedPath();
+        if (watcher.isAutoReload() && watchedPath != null && !watchedPath.isBlank()) {
+            inner.addProperty("autoReloadHint",
+                    "Saving " + watchedPath
+                            + " in the appliedscripts workspace recompiles and re-uploads it to the"
+                            + " watched controller automatically; do not call appliedfactory_upload again"
+                            + " while auto-reload stays on.");
+        }
         return inner;
     }
 
