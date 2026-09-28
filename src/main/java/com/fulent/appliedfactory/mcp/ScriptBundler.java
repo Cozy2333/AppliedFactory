@@ -265,6 +265,7 @@ public final class ScriptBundler {
                     .allowHostClassLookup(ignored -> false)
                     .allowIO(IOAccess.NONE)
                     .allowCreateThread(false)
+                    .option("js.intl-402", "false")
                     .build();
             context.eval(Source.newBuilder("js", typescript, "typescript.js").buildLiteral());
             context.eval(Source.newBuilder("js", COMPILER_HELPER, "appliedfactory-ts-helper.js")

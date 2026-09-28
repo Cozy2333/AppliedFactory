@@ -195,6 +195,7 @@ public final class GraalScriptRuntime implements ScriptRuntime {
                 .allowCreateThread(false)
                 .allowNativeAccess(false)
                 .option("js.ecmascript-version", "2022")
+                .option("js.intl-402", "false")
                 .build();
     }
 

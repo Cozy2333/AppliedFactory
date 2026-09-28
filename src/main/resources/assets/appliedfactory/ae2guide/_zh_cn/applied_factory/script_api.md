@@ -42,6 +42,8 @@ registerProcessingPattern(
 3. 用 GUI 上传，或先通过 MCP 的 `appliedfactory_execute` 运行探针（内联 `code` 会被当作 `appliedscripts/` 根目录下的虚拟文件预编译，无需写入磁盘）；
 4. 确认网络、总线、机器与资源后，再上传生产程序。
 
+注意，处理程序可以提前返回，不会终止订单。手动调用 `order.cancel()` 才会终止订单。
+
 ## 2. 编译、上传与运行生命周期
 
 上传不是直接执行 TypeScript，而是依次进行：
@@ -53,6 +55,8 @@ registerProcessingPattern(
 5. GraalJS 对 JavaScript 求值一次，注册样板并启动 workflow。
 
 上传阶段只保证语法可转译，完整类型检查由 IDE 负责。源码或展开后的执行代码超过 128k 字符会被拒绝。没有对应本地备份的远端源码必须先拉取，不能直接覆盖上传。
+
+嵌入式 JavaScript 运行时不提供 ECMA-402 `Intl` API，`toLocaleString()` 等方法也不提供 ECMA-402 本地化行为。
 
 ## 3. 核心概念与全局入口
 
@@ -164,7 +168,7 @@ const tagged = network("north").extract({
 - 其他字段会与 AE key 编码后的字段递归匹配，缺失字段不参与匹配，因此 `{ id: "minecraft:paper" }` 也能找到被改名的纸；
 - 字符串字段支持 `*`（任意长度）和 `?`（单个字符）通配符，不支持正则表达式；
 - `amount` 必须是正整数，并对每种精确资源独立限额：每个返回项的数量均为 `min(可用量, amount)`；省略时保留每种资源的全部可提取数量；
-- 无匹配资源时返回空数组；
+- 无匹配资源时返回空数组，对空数组的转移会立刻成功，因此无法用 yield 等待目标物品。
 - channel 未注册、标签 ID 或 amount 无效、使用未知 `$` 操作符时抛出运行时错误。
 
 ### 5.3 `storage()`：目标整体库存快照

@@ -97,7 +97,9 @@ dependencies {
             strictly "[${graaljs_version}]"
         }
     }
-    jarJar(implementation("org.graalvm.js:js-language:${graaljs_version}"))
+    jarJar(implementation("org.graalvm.js:js-language:${graaljs_version}") {
+        exclude group: "org.graalvm.shadowed", module: "icu4j"
+    })
     jarJar(implementation("org.graalvm.truffle:truffle-runtime:${graaljs_version}"))
     jarJar(implementation("org.graalvm.truffle:truffle-api:${graaljs_version}"))
     jarJar(implementation("org.graalvm.truffle:truffle-compiler:${graaljs_version}"))
@@ -106,9 +108,10 @@ dependencies {
     jarJar(implementation("org.graalvm.sdk:jniutils:${graaljs_version}"))
     jarJar(implementation("org.graalvm.sdk:nativeimage:${graaljs_version}"))
     jarJar(implementation("org.graalvm.sdk:word:${graaljs_version}"))
-    jarJar(implementation("org.graalvm.shadowed:icu4j:${graaljs_version}"))
     jarJar(implementation("org.graalvm.shadowed:xz:${graaljs_version}"))
-    additionalRuntimeClasspath "org.graalvm.polyglot:js-community:${graaljs_version}"
+    additionalRuntimeClasspath("org.graalvm.polyglot:js-community:${graaljs_version}") {
+        exclude group: "org.graalvm.shadowed", module: "icu4j"
+    }
     typescriptCompiler "org.webjars.npm:typescript:${typescript_version}"
 
     compileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"

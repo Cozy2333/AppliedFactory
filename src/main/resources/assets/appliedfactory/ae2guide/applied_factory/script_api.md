@@ -42,6 +42,8 @@ Recommended order of use:
 3. Upload through the GUI, or first run a probe via MCP's `appliedfactory_execute` (inline `code` is precompiled as a virtual file in the `appliedscripts/` root, with no file written to disk);
 4. Once the network, buses, machines and resources are confirmed, upload the production program.
 
+Note: The handler can return early without terminating the order. The order is terminated only when order.cancel() is explicitly called.
+
 ## 2. Compile, upload and run lifecycle
 
 Uploading does not execute TypeScript directly; it proceeds in order:
@@ -53,6 +55,8 @@ Uploading does not execute TypeScript directly; it proceeds in order:
 5. GraalJS evaluates the JavaScript once, registering patterns and starting workflows.
 
 The upload stage only guarantees that the syntax can be transpiled; full type checking is the IDE's responsibility. Source code or expanded executable code over 128k characters is rejected. Remote source without a matching local backup must be pulled first and cannot be overwritten directly.
+
+The embedded JavaScript runtime does not provide the ECMA-402 `Intl` API. Methods such as `toLocaleString()` do not provide ECMA-402 locale-aware behavior.
 
 ## 3. Core concepts and global entry points
 
@@ -164,7 +168,7 @@ const tagged = network("north").extract({
 - Every other field is matched recursively against the AE key's encoded fields. Missing fields are ignored, so `{ id: "minecraft:paper" }` also matches renamed paper;
 - String fields support `*` (any sequence) and `?` (one character) glob wildcards. Regular expressions are not supported;
 - `amount` is a positive integer cap applied independently to each exact resource: every returned entry has `min(available, amount)`. When omitted, each resource keeps its full extractable amount;
-- Returns an empty array when nothing matches;
+- When nothing matches, the result is an empty array; transferring an empty array succeeds immediately, so `yield` cannot wait for the target item;
 - Throws a runtime error for an unregistered channel, invalid tag ID, invalid amount, or unknown `$` operator.
 
 ### 5.3 `storage()`: whole-target inventory snapshot
