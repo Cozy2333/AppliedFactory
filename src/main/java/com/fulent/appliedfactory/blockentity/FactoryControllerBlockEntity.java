@@ -362,8 +362,8 @@ public final class FactoryControllerBlockEntity extends BlockEntity
 
     /**
      * Compiles before committing so an invalid edit cannot replace the running program.
-     * Successful replacement discards old in-memory generators; their escrow allocations are
-     * recovered by the replacement on its next tick.
+     * Successful replacement cancels parent requests for old processing jobs and discards
+     * old in-memory generators; their escrow allocations are recovered on the next tick.
      */
     public ProgramLoadResult<FactoryProgram> updateControllerProgram(
             String source, String compiledSource, String workspacePath) {

@@ -304,8 +304,14 @@ public final class FactoryProgram {
     }
 
     public void discard() {
+        var canceledRequests = new HashSet<UUID>();
         for (var job : jobs) {
             host.cancelCraftingOrder(job.id());
+            if (job instanceof ProcessingJob processing
+                    && processing.craftingRequestId() != null
+                    && canceledRequests.add(processing.craftingRequestId())) {
+                cancelParentCraftingRequest(processing.craftingRequestId());
+            }
         }
         jobs.clear();
         stoppedPassives.clear();
@@ -446,6 +452,10 @@ public final class FactoryProgram {
     private void finish(FactoryJob job, String failure) {
         jobs.remove(job);
         host.cancelCraftingOrder(job.id());
+        if (failure != null && job instanceof ProcessingJob processing
+                && processing.craftingRequestId() != null) {
+            cancelParentCraftingRequest(processing.craftingRequestId());
+        }
         if (job instanceof PassiveJob passive) {
             stoppedPassives.add(passive.passiveIndex());
         }
@@ -454,6 +464,17 @@ public final class FactoryProgram {
             host.reportScriptFailure("workflow", failure);
         }
         host.markChanged();
+    }
+
+    private void cancelParentCraftingRequest(UUID craftingRequestId) {
+        try {
+            host.cancelCraftingRequest(craftingRequestId);
+        } catch (RuntimeException exception) {
+            AppliedFactory.LOGGER.error(
+                    "Factory parent crafting request {} cancellation failed",
+                    craftingRequestId,
+                    exception);
+        }
     }
 
     private void recoverOrphanEscrows() {
