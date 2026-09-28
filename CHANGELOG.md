@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1] - 2026-09-28
+
+- 自动重载不再依赖 MCP 绑定；同一维度内即使距离较远，也能监视并重载选中的脚本。
+- 脚本 workflow 意外终止或程序被替换时，取消对应的 AE CPU 请求，并回收 escrow 中剩余材料。
+- 新增 Draconic Evolution 聚合合成和 Hephaestus Forge 自动化示例脚本。
+- 移除 ICU4J 并禁用脚本运行时的 `Intl` API，JAR 体积减少约 16.7 MB。
+- 更新控制器按钮说明，并澄清资源查询空结果及转移行为。
+
+- Decoupled auto-reload from MCP binding. Selected scripts can now be watched and reloaded anywhere in the same dimension.
+- Cancel the corresponding AE CPU request and recover remaining escrowed materials when a script workflow terminates unexpectedly or its program is replaced.
+- Added sample scripts for Draconic Evolution fusion crafting and Hephaestus Forge automation.
+- Removed ICU4J and disabled the script runtime's `Intl` API, reducing the JAR size by about 16.7 MB.
+- Updated controller button documentation and clarified empty resource-query and transfer behavior.
+
 ## [0.3.0] - 2026-09-24
 
 - 全面改进控制器界面和脚本编辑器；可在游戏内创建、保存、重命名和管理脚本，并快捷打开工作区、VS Code 或系统文件管理器。
