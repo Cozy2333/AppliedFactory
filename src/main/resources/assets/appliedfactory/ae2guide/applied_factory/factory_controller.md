@@ -42,27 +42,25 @@ After opening the controller:
 
 1. Select a `.ts` file in the left file list;
 2. Edit the code on the right;
-3. Click `↑` in the top-right to upload;
+3. Click **Precompile & Upload** in the top-right;
 4. Turn on the log subscription and check whether the script loaded successfully;
 5. Check the processing patterns registered by the script in an AE2 terminal.
 
-If the controller already has a program but there is no matching local file, click `↓` first to save the program locally, then continue editing.
+If the controller already has a program but there is no matching local file, click **Pull to Local** first, then continue editing.
 
 ### Buttons
 
-Toolbar:
+Toolbar buttons (hover for their labels):
 
-- `○` / `●`: turn the controller log on or off;
-- `↓`: pull the controller's program to a local file;
-- `M`: connect or disconnect MCP;
-- `↑`: save and upload the current script;
-- **Save** (`Ctrl+S`): write the current script to the local file only, without contacting the controller;
-- Auto-reload: automatically re-upload when the selected file changes on disk;
-- **Export Workspace**: regenerate `appliedscripts/`;
-- **Open VS Code**: open `appliedscripts/` in Visual Studio Code;
-- **Open Folder**: open `appliedscripts/` in the system file explorer.
+- **Export Workspace**: regenerate `appliedscripts/` from the bundled docs and local JEI data;
+- **Enable/Disable Auto Reload** (refresh icon): automatically precompile and upload the selected script when its local file changes;
+- **Subscribe/Unsubscribe Logs** (log icon): subscribe to or stop receiving this controller's logs;
+- **Bind MCP / Unbind** (link icon): bind or unbind this controller for MCP;
+- **Pull to Local** (download icon): copy the controller's program into `appliedscripts/`; confirm before overwriting a different local file;
+- **Precompile & Upload** (upload icon): save the selected local file, precompile its TypeScript, then upload the program to the controller;
+- **Save** (`Ctrl+S`): write the current script to the selected local file only, without contacting the controller;
 
-Bottom of the file browser: New, Delete, Rename, Page Up, Page Down, Refresh.
+File browser footer: **New**, **Delete**, **Rename**, **Refresh**, **Open Folder**, and **Open VS Code**. The arrows on the right change file pages.
 
 ## Writing a controller program
 
@@ -125,7 +123,7 @@ MCP lets a coding assistant inspect controller status, run temporary scripts and
 
 1. Open the `appliedscripts/` folder in your coding tool;
 2. Join the world and open the target controller;
-3. Click `M` to connect the controller;
+3. Click **Bind MCP** in the controller toolbar;
 4. First run a temporary script to check the network, buses and machines;
 5. Upload the production program once the result is confirmed.
 
@@ -137,7 +135,7 @@ Make sure the files are under `appliedscripts/`, then click Refresh. Controller 
 
 ### Cannot edit or upload an existing program
 
-Click `↓` to pull the controller's program to a local file, then select the pulled file.
+Click **Pull to Local** to copy the controller's program to a local file, then select that file.
 
 ### Processing patterns do not appear in AE2
 
@@ -145,4 +143,4 @@ Turn on the log and re-upload the script to check directions, inputs/outputs and
 
 ### MCP cannot connect
 
-Confirm the game is still running and the controller's chunk is loaded, then click `M` again in the controller screen, or restart the agent tool.
+Confirm the game is still running and the controller's chunk is loaded, then click **Bind MCP** again in the controller screen, or restart the agent tool.

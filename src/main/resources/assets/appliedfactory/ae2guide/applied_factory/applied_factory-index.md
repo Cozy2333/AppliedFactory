@@ -14,7 +14,7 @@ Applied Factory lets you control machines in an AE2 network with TypeScript and 
 2. Attach a Factory Bus to an AE2 cable next to a machine, pointing the bus at the machine.
 3. Open the controller and click **Export Workspace** in the top-right to prepare the script files and the current modpack's recipe data.
 4. Open the controller and select a TypeScript file on the left.
-5. Edit the script and click `↑` to upload.
+5. Edit the script and click **Precompile & Upload**.
 6. Check the log; once the script registers patterns successfully, you can start crafting from an AE2 terminal.
 
 ## Guides
